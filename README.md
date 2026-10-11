@@ -1,11 +1,11 @@
-# Shelar Residence · Interactive 3D model
+# Shelar Residence — revised-plan 3D walkthrough
 
-An offline-ready Three.js visualization of a five-page architectural floor plan. Open `index.html` in a modern browser, or visit the Vercel deployment.
+This viewer uses the four-sheet `2D_R0_JSW_Shelar Residence_06102026.pdf` supplied by the owner. Open `index.html` from a local server, or open the self-contained `Shelar-Residence-3D.html` in a browser.
 
-Features: four selectable levels, two stilt configurations, orbit/top/entry views, first-person walkthrough, third-person follow camera, cutaway walls, exploded floors, labels with dimensions, source drawings, furniture controls, and PNG export.
+Choose a level or the entire house. Drag to orbit in 3D view; scroll or use +/− to zoom. Walk POV and Follow cam use WASD or arrow keys to move, drag to look, Shift to run, and E or the on-screen button to open and close nearby doors. Follow cam displays a character asset from [Kenney Blocky Characters](https://kenney.nl/assets/blocky-characters), licensed CC0; see `CHARACTER-LICENSE.txt`. Use the floor selector to move directly between levels, or take the staircase in walkthrough mode. Tap movement buttons on touch screens.
 
-`index.html` is fully self-contained for static hosting. `model.js` is the readable model and interaction source. The packaged page also includes the original source drawings as embedded images and Three.js / OrbitControls under the MIT license (`THREE-LICENSE.txt`).
+The revised plan shows one car and bikes at stilt level, plus a bedroom, living area, kitchen and utility; living/dining, bedroom, kitchen and utility on the first floor; two bedroom suites, living, pooja and balconies on the second floor; and a bedroom and open terrace at penthouse level. Room labels display dimensions transcribed from the drawing.
 
-Walk with WASD or arrow keys, drag to look, hold Shift to run, or use the touch movement pad. Scroll zoom is disabled.
+The drawing is marked NTS. Geometry, openings, roof, furnishing and materials are indicative, not measured CAD or construction documentation. Printed levels are +2′6″, +13′6″ and +24′6″; the penthouse level is inferred at +35′6″ from the 11′ interval.
 
-The PDF is marked NTS. Room placement and listed dimensions are based on it; model proportions and unspecified heights, openings, finishes, furniture, façade, and roof are illustrative. The penthouse height continues the 11-foot interval shown between the first and second floors. This is a concept visualization, not a construction model.
+`model.js` holds the Three.js scene and interactions. `plans/` contains renders of the supplied sheets. `vendor/` contains local Three.js and GLTFLoader scripts. Three.js is MIT licensed; see `vendor/LICENSE.txt`.
