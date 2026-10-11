@@ -5,7 +5,7 @@ async function route(name,points,level){const result=await p.evaluate(({points})
 await route('first to second',[[3.3,6.45],[3.3,7.22],[.72,7.22],[.72,3.86],[3.3,3.86],[3.3,5]],2);
 await route('second to penthouse',[[3.3,7.22],[.72,7.22],[.72,3.86],[3.3,3.86],[3.3,5]],3);
 await route('penthouse to second',[[3.3,3.86],[.72,3.86],[.72,7.22],[3.3,7.22],[3.3,5]],2);
-await route('second to first',[[3.3,3.86],[.72,3.86],[.72,7.22],[3.3,7.22],[3.3,4.15],[6.65,4.15]],1);
+await route('second to first',[[3.3,3.86],[.72,3.86],[.72,7.22],[3.3,7.22],[3.3,6.45],[6.65,6.45],[6.65,4.15]],1);
 await p.keyboard.press('e');await p.waitForTimeout(500);
 await route('through lobby doorway',[[6.65,2.5],[5.1,2.5],[5.1,.95]],1);
 await route('first to stilt',[[4.65,.95],[.7,.95],[.7,2.5],[4.8,2.5],[5.4,2.5]],0);
