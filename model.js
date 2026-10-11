@@ -20,9 +20,9 @@ const T={wall:surfaceTexture('wall'),floor:surfaceTexture('floor'),concrete:surf
 const M={wall:mat('#e8d9c6',{map:T.wall}),edge:mat('#948f82'),stone:mat('#c9c9bf',{map:T.concrete}),wood:mat('#ae8157',{map:T.wood}),darkwood:mat('#765a43',{map:T.wood}),fabric:mat('#c8c9b1'),sage:mat('#8fa28e'),white:mat('#f7f5ec'),black:mat('#293d3a'),metal:mat('#73817c',{metalness:.55,roughness:.3}),glass:mat('#a9ccd0',{transparent:true,opacity:.36,roughness:.13,depthWrite:false}),water:mat('#73989c'),tile:mat('#d3d8d3',{map:T.floor}),car:mat('#617a78',{metalness:.25,roughness:.25}),leaves:mat('#68825b')};
 const house=new THREE.Group();house.position.set(-3.735,0,-5.8);scene.add(house);
 const floors=[],pickables=[],labels=[],doors=[];let selected='1',view='iso',highlight=null;
-const player={x:5.65,z:6.25,y:4.1148,level:1,yaw:-Math.PI/2,pitch:0,followDistance:3.2};const pressed=new Set();let dragLook=null,lastFrame=performance.now(),nearDoor=null,characterMixer=null,walkAction=null,idleAction=null,wasMoving=false;
-const avatar=new THREE.Group();scene.add(avatar);
-const loader=new GLTFLoader();function installCharacter(gltf){const model=gltf.scene;const bounds=new THREE.Box3().setFromObject(model),size=bounds.getSize(new THREE.Vector3());model.scale.setScalar(1.65/Math.max(size.y,.01));const scaled=new THREE.Box3().setFromObject(model);model.position.y=-scaled.min.y;model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});avatar.add(model);if(gltf.animations?.length){characterMixer=new THREE.AnimationMixer(model);const walk=gltf.animations.find(a=>a.name==='walk'),idle=gltf.animations.find(a=>a.name==='idle');if(walk)walkAction=characterMixer.clipAction(walk);if(idle){idleAction=characterMixer.clipAction(idle);idleAction.play();}}renderNeeded=true;}
+const player={x:5.65,z:6.25,y:4.1148,level:1,yaw:-Math.PI/2,pitch:0,followDistance:2.8,facing:Math.PI};const pressed=new Set();let dragLook=null,lastFrame=performance.now(),nearDoor=null,characterMixer=null,walkAction=null,idleAction=null,wasMoving=false;
+const avatar=new THREE.Group();scene.add(avatar);const avatarMaterials=[];let cameraBoom=2.8;
+const loader=new GLTFLoader();function installCharacter(gltf){const model=gltf.scene;const bounds=new THREE.Box3().setFromObject(model),size=bounds.getSize(new THREE.Vector3());model.scale.setScalar(1.65/Math.max(size.y,.01));model.scale.x*=Math.min(1,.60/(size.x*model.scale.x));model.scale.z*=.88;const scaled=new THREE.Box3().setFromObject(model);model.position.y=-scaled.min.y;model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;o.material=o.material.clone();o.material.transparent=true;avatarMaterials.push(o.material);}});avatar.add(model);if(gltf.animations?.length){characterMixer=new THREE.AnimationMixer(model);const walk=gltf.animations.find(a=>a.name==='walk'),idle=gltf.animations.find(a=>a.name==='idle');if(walk)walkAction=characterMixer.clipAction(walk);if(idle){idleAction=characterMixer.clipAction(idle);idleAction.play();}}renderNeeded=true;}
 if(typeof CHARACTER_GLB_BASE64!=='undefined'){const raw=atob(CHARACTER_GLB_BASE64),buffer=new Uint8Array(raw.length);for(let j=0;j<raw.length;j++)buffer[j]=raw.charCodeAt(j);loader.parse(buffer.buffer,'',installCharacter,e=>console.error('Character could not load',e));}else loader.load('character.glb',installCharacter,undefined,e=>console.error('Character could not load',e));
 const elevations=[.762,4.1148,7.4676,10.8204], H=3.1728,W=7.47,D=11.6,RISE=3.3528;
 function box(g,x,y,z,w,h,d,m,shadow=true){const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);mesh.position.set(x,y,z);mesh.castShadow=shadow;mesh.receiveShadow=true;g.add(mesh);return mesh;}
@@ -69,28 +69,50 @@ function basin(f,x,z){box(f.furniture,x,.72,z,.62,.12,.42,M.white);cylinder(f.fu
 function bathroom(f,x1,z1,x2,z2,name='Toilet',dim=''){room(f,name,dim,x1,z1,x2,z2,'#cdd6d0');toilet(f,x1+.43,z1+.36);basin(f,x2-.5,z1+.26);box(f.furniture,(x1+x2)/2,1.04,z1+.1,.025,1.4,.04,M.metal);}
 // The drawing has a street-side lobby stair on sheets 1–2 and a separate
 // internal stair beside the dining/living area on sheets 2–4.
-function entranceStair(f){
- const half=RISE/2,x0=.75,x1=4.42;
- for(let j=0;j<11;j++){
-  const x=x1-(j+.5)*(x1-x0)/11,top=(j+1)*half/11;
-  box(f.stairs,x,top/2,2.48,(x1-x0)/11+.015,top,.9,M.stone);
-  const x2=x0+(j+.5)*(x1-x0)/11,top2=half+(j+1)*half/11;
-  box(f.stairs,x2,top2/2,.94,(x1-x0)/11+.015,top2,.9,M.stone);
+// Shared walkable surfaces: geometry and movement use the same footprints/heights.
+const stairSurfaces=[];
+function stairPatch(f,id,x1,z1,x2,z2,h1,h2,axis='x',steps=1){
+ const patch={base:f.i,id,x1,z1,x2,z2,h1,h2,axis};stairSurfaces.push(patch);
+ const span=axis==='x'?x2-x1:z2-z1;
+ for(let j=0;j<steps;j++){
+  const t=(j+.5)/steps,top=h1+(h2-h1)*t;
+  // Thin treads preserve headroom beneath the next flight.
+  const mesh=box(f.stairs,axis==='x'?x1+span*t:(x1+x2)/2,top-.075,axis==='z'?z1+span*t:(z1+z2)/2,axis==='x'?span/steps+.012:x2-x1,.15,axis==='z'?span/steps+.012:z2-z1,M.stone);
+  mesh.userData.stair=true;
+  const nosing=box(f.stairs,mesh.position.x,top+.006,mesh.position.z,axis==='x'?.024:x2-x1,.012,axis==='z'?.024:z2-z1,M.edge,false);
  }
- box(f.stairs,.65,half/2,1.71,.65,half,2.2,M.stone);
- for(let x=.7;x<4.45;x+=.65)for(const z of [1.57,3.0])box(f.stairs,x,1.02,z,.035,1.4,.035,M.metal);
+}
+function entranceStair(f){
+ const half=RISE/2;
+ stairPatch(f,'lobby',1.0,2.03,4.5,2.98,half,0,'x',11);
+ stairPatch(f,'lobby',.3,.48,1.0,2.98,half,half);
+ stairPatch(f,'lobby',1.0,.48,4.5,1.43,half,RISE,'x',11);
+ stairPatch(f,'lobby',4.5,.48,4.72,1.43,RISE,RISE);
+ stairRail(f,1.05,2.02,4.5,2.02,half,0);
+ stairRail(f,1.05,1.44,4.5,1.44,half,RISE);
+ stairCue(f,'UP → FIRST',4.98,2.51,0);stairCue(f,'DOWN → STILT',4.98,.95,RISE);
 }
 function interiorStair(f){
- const half=RISE/2;
- for(let j=0;j<10;j++){
-  const x=2.52-(j+.5)*1.92/10,top=(j+1)*half/10;
-  box(f.stairs,x,top/2,7.20,1.92/10+.012,top,.86,M.stone);
-  const z=6.72-(j+.5)*3.12/10,top2=half+(j+1)*half/10;
-  box(f.stairs,.72,top2/2,z,.88,top2,3.12/10+.012,M.stone);
- }
- box(f.stairs,.71,half/2,6.97,1.05,half,.95,M.stone);
- box(f.stairs,1.56,RISE-.09,3.58,1.95,.18,.9,M.stone);
- for(let z=3.65;z<7.6;z+=.66)box(f.stairs,1.24,1.0,z,.035,1.45,.035,M.metal);
+ const low=RISE*7/22,high=RISE*15/22;
+ stairPatch(f,'internal',2.82,6.80,3.10,7.66,0,0);
+ stairPatch(f,'internal',1.15,6.80,2.82,7.66,low,0,'x',7);
+ stairPatch(f,'internal',.28,6.80,1.15,7.66,low,low);
+ stairPatch(f,'internal',.28,4.20,1.15,6.80,high,low,'z',8);
+ stairPatch(f,'internal',.28,3.45,1.15,4.20,high,high);
+ stairPatch(f,'internal',1.15,3.45,2.82,4.20,high,RISE,'x',7);
+ stairPatch(f,'internal',2.82,3.45,3.08,4.20,RISE,RISE);
+ stairRail(f,1.16,6.79,2.82,6.79,low,0);
+ stairRail(f,1.17,4.22,1.17,6.77,high,low);
+ stairRail(f,1.16,4.21,2.82,4.21,high,RISE);
+ stairCue(f,f.i===1?'UP → SECOND':'UP → TERRACE',3.32,7.24,0);stairCue(f,f.i===1?'DOWN → FIRST':'DOWN → SECOND',3.32,3.86,RISE);
+}
+function stairRail(f,x1,z1,x2,z2,y1,y2){
+ const n=Math.ceil(Math.hypot(x2-x1,z2-z1)/.5);
+ for(let i=0;i<=n;i++){const t=i/n;box(f.stairs,x1+(x2-x1)*t,y1+(y2-y1)*t+.44,z1+(z2-z1)*t,.03,.88,.03,M.metal);}
+ line(f.stairs,[[x1,y1+.89,z1],[x2,y2+.89,z2]],'#48645b');
+}
+function stairCue(f,text,x,z,y){
+ const plaque=new THREE.Mesh(new THREE.PlaneGeometry(.78,.2),signMaterial(text));plaque.rotation.x=-Math.PI/2;plaque.position.set(x,y+.045,z);f.stairs.add(plaque);
 }
 function stairCore(f){
  if(f.i<=1){
@@ -133,7 +155,9 @@ function slab(f){
      box(f.base,.10,-.11,1.7,.2,.22,3.4,M.stone);
     }else box(f.base,W/2,-.11,1.7,W,.22,3.4,M.stone);
     box(f.base,W/2,-.11,9.72,W,.22,3.76,M.stone);
-    box(f.base,(W+2.56)/2,-.11,5.65,W-2.56,.22,4.5,M.stone);
+    box(f.base,(W+3.08)/2,-.11,5.65,W-3.08,.22,4.5,M.stone);
+    if(f.i===1)box(f.base,1.64,-.11,5.65,2.88,.22,4.5,M.stone);
+    else box(f.base,2.0,-.11,5.5,1.6,.22,2.5,M.stone);
     box(f.base,.10,-.11,5.65,.2,.22,4.5,M.stone);
   }
   for(const z of [0,D])box(f.base,W/2,-.23,z,W+.08,.04,.06,M.white);
@@ -144,7 +168,7 @@ function terrace(f,x1,z1,x2,z2,dim){room(f,'Open terrace',dim,x1,z1,x2,z2,'#d7d8
 function balcony(f,x1,z1,x2,z2,labelText){room(f,'Balcony',labelText,x1,z1,x2,z2,'#d2c9b6');box(f.base,x2-.06,.53,(z1+z2)/2,.1,1.05,z2-z1,M.white);}
 function createModel(){
  for(const f of floors){house.remove(f.root);f.root.traverse(o=>{if(o.isMesh)o.geometry.dispose();});}
- floors.length=0;pickables.length=0;doors.length=0;for(const l of labels)l.el.remove();labels.length=0;
+ floors.length=0;pickables.length=0;doors.length=0;stairSurfaces.length=0;for(const l of labels)l.el.remove();labels.length=0;
  for(let i=0;i<4;i++){
   const f=makeFloor(i);facade(f);stairCore(f);
   if(i===0){
@@ -252,7 +276,7 @@ function update(){
  $('#walls').disabled=game;$('#explode').disabled=game||!all;$('#roof').disabled=game||!(all||selected==='3');
  $('#roomInfo').innerHTML='<strong>'+(all?'Shelar Residence':['Stilt','First floor','Second floor','Penthouse'][+selected])+'</strong><span>'+(game?'Walk through the rooms and use the staircase to change levels.':all?'Select a level to explore its rooms.':'Select a room to see its plan dimensions.')+'</span>';
 }
-function placeAtLevel(level){player.level=level;player.x=[8.55,5.15,5.8,5.15][level];player.z=[5.6,6.45,6.75,6.8][level];player.y=level===0?parkingRampHeight(player.x,player.z):elevations[level];player.yaw=level===0?-Math.PI/2:0;player.pitch=0;}
+function placeAtLevel(level){player.level=level;player.x=[8.55,5.15,5.8,5.15][level];player.z=[5.6,6.45,6.75,6.8][level];player.y=level===0?parkingRampHeight(player.x,player.z):elevations[level];player.yaw=level===0?-Math.PI/2:0;player.pitch=0;player.facing=Math.PI-player.yaw;cameraBoom=player.followDistance;}
 function setCamera(mode=view,reset=false){
  const wasGame=isGame();view=mode;const game=isGame();stage.classList.toggle('gaming',game);controls.enabled=!game;renderer.shadowMap.enabled=!game;renderer.setPixelRatio(game?1:Math.min(devicePixelRatio,2));renderer.setSize(stage.clientWidth,stage.clientHeight);camera.fov=mode==='pov'?69:mode==='follow'?63:38;camera.updateProjectionMatrix();avatar.visible=mode==='follow';
  $('#hint').textContent=game?'WASD / arrows · Drag to look · E: door · Wheel / + / −: zoom':'Drag to orbit · Wheel / + / − to zoom · Right-drag to pan';
@@ -261,25 +285,37 @@ function setCamera(mode=view,reset=false){
  ['iso','top','front','pov','follow'].forEach(id=>$('#'+id).classList.toggle('active',id===mode));renderNeeded=true;
 }
 function resize(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();if(isGame())updateGameCamera();else setCamera(view);renderNeeded=true;}new ResizeObserver(resize).observe(stage);
-function updateGameCamera(){
- const px=player.x-3.735,pz=player.z-5.8,y=player.y;avatar.position.set(px,y,pz);avatar.rotation.y=player.yaw+Math.PI;
+function updateGameCamera(dt=1/60){
+ const px=player.x-3.735,pz=player.z-5.8,y=player.y;avatar.position.set(px,y,pz);avatar.rotation.y+=(Math.atan2(Math.sin(player.facing-avatar.rotation.y),Math.cos(player.facing-avatar.rotation.y)))*Math.min(1,dt*14);
  if(view==='pov'){camera.position.set(px,y+1.64,pz);camera.lookAt(px+Math.sin(player.yaw)*10*Math.cos(player.pitch),y+1.64+Math.sin(player.pitch)*10,pz-Math.cos(player.yaw)*10*Math.cos(player.pitch));}
  else if(view==='follow'){
-  const back=player.followDistance,side=.38;
-  const origin=new THREE.Vector3(px,y+1.32,pz);
-  const desired=new THREE.Vector3(px-Math.sin(player.yaw)*back+Math.cos(player.yaw)*side,y+2.18+player.pitch*.7,pz+Math.cos(player.yaw)*back+Math.sin(player.yaw)*side);
+  const back=player.followDistance,side=.18;
+  const origin=new THREE.Vector3(px,y+1.5,pz);
+  const desired=new THREE.Vector3(px-Math.sin(player.yaw)*back+Math.cos(player.yaw)*side,y+2.08+player.pitch*.7,pz+Math.cos(player.yaw)*back+Math.sin(player.yaw)*side);
   const vector=desired.clone().sub(origin),length=vector.length(),direction=vector.normalize();
-  const solids=[];const floor=floors[player.level];floor?.walls.traverse(o=>{if(o.isMesh&&o.visible)solids.push(o);});
-  floor?.doorGroup.traverse(o=>{if(o.isMesh&&o.visible)solids.push(o);});if(floor?.furniture.visible)floor.furniture.traverse(o=>{if(o.isMesh&&o.visible)solids.push(o);});
-  const hits=new THREE.Raycaster(origin,direction,.12,length).intersectObjects(solids,false);
-  const travel=hits.length?Math.max(.38,hits[0].distance-.16):length;
-  camera.position.copy(origin).addScaledVector(direction,travel);
-  camera.lookAt(px+Math.sin(player.yaw)*1.55,y+1.18,pz-Math.cos(player.yaw)*1.55);
-  avatar.visible=travel>1.15;
+  const solids=[];
+  for(const floor of floors){
+   if(Math.abs(elevations[floor.i]-player.y)>RISE+1)continue;
+   for(const group of [floor.walls,floor.doorGroup,floor.base,floor.stairs,...(floor.furniture.visible?[floor.furniture]:[])])group.traverse(o=>{if(o.isMesh&&o.visible)solids.push(o);});
+  }
+  scene.updateMatrixWorld(true);
+  // Several offset rays give the camera clearance at corners and railings.
+  let safe=length;
+  for(const offset of [-.12,0,.12]){
+   const rayOrigin=origin.clone().add(new THREE.Vector3(Math.cos(player.yaw)*offset,0,Math.sin(player.yaw)*offset));
+   const hits=new THREE.Raycaster(rayOrigin,direction,.08,length).intersectObjects(solids,false);
+   if(hits.length)safe=Math.min(safe,Math.max(.12,hits[0].distance-.18));
+  }
+  cameraBoom=safe<cameraBoom?safe:cameraBoom+(safe-cameraBoom)*(1-Math.exp(-dt*7));
+  camera.position.copy(origin).addScaledVector(direction,cameraBoom);
+  camera.lookAt(px+Math.sin(player.yaw)*2,y+1.5+Math.sin(player.pitch)*2,pz-Math.cos(player.yaw)*2);
+  const opacity=Math.max(0,Math.min(1,(cameraBoom-1.35)/.85));
+  avatar.visible=opacity>.01;$('#hint').textContent=cameraBoom<1.6?'Tight space · Character fades for visibility · WASD / arrows to move':'WASD / arrows · Drag to look · E: door · Wheel / + / −: zoom';for(const material of avatarMaterials){material.opacity=opacity;material.depthWrite=opacity>.95;}
  }
+
  renderNeeded=true;updateNearbyDoor();updateLocation();
 }
-function currentRoom(){if(player.level===0&&player.x>7.27)return 'Parking entrance';if(player.level<=1&&player.x<4.5&&player.z<3.35)return 'Lobby staircase';if(player.level>=1&&player.x<2.55&&player.z>3.4&&player.z<7.9)return 'Internal staircase';const matches=pickables.filter(m=>m.userData.f.i===player.level&&Math.abs(m.position.x-player.x)<m.geometry.parameters.width/2&&Math.abs(m.position.z-player.z)<m.geometry.parameters.depth/2);matches.sort((a,b)=>a.geometry.parameters.width*a.geometry.parameters.depth-b.geometry.parameters.width*b.geometry.parameters.depth);return matches[0]?.userData.name||'Hallway';}
+function currentRoom(){const stair=stairSurfaces.find(p=>player.x>=p.x1&&player.x<=p.x2&&player.z>=p.z1&&player.z<=p.z2&&Math.abs(elevations[p.base]+p.h1+(p.h2-p.h1)*(p.axis==='x'?(player.x-p.x1)/(p.x2-p.x1):(player.z-p.z1)/(p.z2-p.z1))-player.y)<.15);if(stair)return ['Stilt ↔ First · stairs','First ↔ Second · stairs','Second ↔ Terrace · stairs'][stair.base];if(player.level===0&&player.x>7.27)return 'Parking entrance';if(player.level<=1&&player.x<4.5&&player.z<3.35)return 'Lobby staircase';if(player.level>=1&&player.x<2.55&&player.z>3.4&&player.z<7.9)return 'Internal staircase';const matches=pickables.filter(m=>m.userData.f.i===player.level&&Math.abs(m.position.x-player.x)<m.geometry.parameters.width/2&&Math.abs(m.position.z-player.z)<m.geometry.parameters.depth/2);matches.sort((a,b)=>a.geometry.parameters.width*a.geometry.parameters.depth-b.geometry.parameters.width*b.geometry.parameters.depth);return matches[0]?.userData.name||'Hallway';}
 let lastLocation='';function updateLocation(){if(!isGame())return;const room=currentRoom(),text=player.level+'-'+room;if(text===lastLocation)return;lastLocation=text;$('#levelHud').textContent=['STILT','FIRST FLOOR','SECOND FLOOR','PENTHOUSE'][player.level];$('#roomHud').textContent=room;}
 function updateNearbyDoor(){if(!isGame())return;nearDoor=null;let nearest=1.35;for(const d of doors){if(d.floor!==player.level)continue;const dist=Math.hypot(player.x-d.cx,player.z-d.cz);if(dist<nearest){nearest=dist;nearDoor=d;}}const button=$('#doorAction');button.classList.toggle('available',!!nearDoor);if(nearDoor)button.textContent=(nearDoor.target?'Close ':'Open ')+nearDoor.name+' · E';}
 function toggleDoor(){if(!nearDoor)return;nearDoor.target=nearDoor.target?0:1;updateNearbyDoor();renderNeeded=true;}
@@ -287,26 +323,33 @@ function distanceToSegment(x,z,ax,az,bx,bz){const dx=bx-ax,dz=bz-az,t=Math.max(0
 function blocked(x,z){const roadAccess=player.level===0&&x>=7.16&&x<=9.1&&z>2.05&&z<8.9;if((x<.3||x>7.16||z<.3||z>11.3)&&!roadAccess)return true;const level=Math.min(3,Math.max(0,player.level));for(const line of floors[level].colliders){if(distanceToSegment(x,z,...line)<.20)return true;}for(const d of doors){if(d.floor!==level)continue;const width=Math.hypot(d.x2-d.x1,d.z2-d.z1),theta=d.pivot.rotation.y+d.angle;if(distanceToSegment(x,z,d.x1,d.z1,d.x1+Math.cos(theta)*width,d.z1-Math.sin(theta)*width)<.18)return true;}if($('#furniture').checked)for(const o of floors[level].obstacles){if(Math.abs(x-o.x)<o.rx+.17&&Math.abs(z-o.z)<o.rz+.17)return true;}return false;}
 function parkingRampHeight(x,z){return x>7.16&&z>2.05&&z<8.9?Math.max(.08,elevations[0]-(x-7.16)*.34):elevations[0];}
 function stairHeight(x,z){
- if(player.y<=elevations[1]+.1&&x>=.5&&x<=4.5&&z>=.45&&z<=3.02){
-  let fraction=null;
-  if(x<.85)fraction=.5;
-  else if(z>=2.03)fraction=.5*(4.42-x)/3.67;
-  else if(z<=1.42)fraction=.5+.5*(x-.75)/3.67;
-  if(fraction!==null)return elevations[0]+RISE*Math.max(0,Math.min(1,fraction));
+ let best=null,delta=Infinity;
+ for(const p of stairSurfaces){
+  if(x<p.x1-.015||x>p.x2+.015||z<p.z1-.015||z>p.z2+.015)continue;
+  const span=p.axis==='x'?p.x2-p.x1:p.z2-p.z1;
+  const t=Math.max(0,Math.min(1,((p.axis==='x'?x-p.x1:z-p.z1)/span)));
+  const y=elevations[p.base]+p.h1+(p.h2-p.h1)*t;
+  const diff=Math.abs(y-player.y);
+  if(diff<delta){delta=diff;best=y;}
  }
- if(player.y>=elevations[1]-.1&&x>=.3&&x<=2.58&&z>=3.35&&z<=7.7){
-  let fraction=null;
-  if(z<=3.7)fraction=1;
-  else if(z>=6.78&&x>=.55)fraction=.5*(2.52-x)/1.92;
-  else if(x<=1.18&&z<=6.78)fraction=.5+.5*(6.72-z)/3.12;
-  else if(x<=1.18&&z<7.7)fraction=.5;
-  if(fraction!==null){
-   fraction=Math.max(0,Math.min(1,fraction));
-   const base=Math.abs(player.y-(elevations[1]+RISE*fraction))<Math.abs(player.y-(elevations[2]+RISE*fraction))?1:2;
-   return elevations[base]+RISE*fraction;
-  }
+ // A flight on another storey must never block a room below it.
+ return delta<=.34?best:null;
+}
+function walkingHeight(x,z){
+ const stair=stairHeight(x,z);if(stair!==null)return stair;
+ const level=player.level,ground=level===0?parkingRampHeight(x,z):elevations[level];
+ // Do not let the character float across the openings beside a stair flight.
+ if(level===1&&x>.2&&x<4.46&&z<3.4)return null;
+ if(level>=2&&x>.2&&x<3.08&&z>3.4&&z<7.9){
+  if(!(x>=1.2&&x<=2.8&&z>=4.25&&z<=6.75))return null;
  }
- return null;
+ for(const p of stairSurfaces){
+  if(x<p.x1||x>p.x2||z<p.z1||z>p.z2)continue;
+  const t=p.axis==='x'?(x-p.x1)/(p.x2-p.x1):(z-p.z1)/(p.z2-p.z1);
+  const underside=elevations[p.base]+p.h1+(p.h2-p.h1)*t-.15;
+  if(underside>ground+.3&&underside<ground+1.65)return null;
+ }
+ return ground;
 }
 function movePlayer(dt){
  if(!isGame())return false;
@@ -315,11 +358,11 @@ function movePlayer(dt){
  const speed=(pressed.has('ShiftLeft')?3.25:1.8)*dt/Math.hypot(forward,right),dx=(Math.sin(player.yaw)*forward+Math.cos(player.yaw)*right)*speed,dz=(-Math.cos(player.yaw)*forward+Math.sin(player.yaw)*right)*speed;
  const steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.08));let moved=false;
  for(let n=0;n<steps;n++){
-  for(const axis of ['x','z']){const nx=player.x+(axis==='x'?dx/steps:0),nz=player.z+(axis==='z'?dz/steps:0);if(blocked(nx,nz))continue;const stair=stairHeight(nx,nz),target=stair??(player.level===0?parkingRampHeight(nx,nz):elevations[player.level]);if(Math.abs(target-player.y)>.32)continue;player.x=nx;player.z=nz;player.y=target;moved=true;}
+  for(const axis of ['x','z']){const nx=player.x+(axis==='x'?dx/steps:0),nz=player.z+(axis==='z'?dz/steps:0);if(blocked(nx,nz))continue;const target=walkingHeight(nx,nz);if(target===null||Math.abs(target-player.y)>.32)continue;player.x=nx;player.z=nz;player.y=target;moved=true;}
  }
  const newLevel=Math.max(0,Math.min(3,elevations.reduce((level,height,i)=>player.y>=height-.08?i:level,0)));
  if(newLevel!==player.level){player.level=newLevel;selected=String(newLevel);update();}
- if(moved)updateGameCamera();return moved;
+ if(moved){player.facing=Math.PI-Math.atan2(dx,-dz);updateGameCamera(dt);}return moved;
 }
 function zoomBy(direction){
  if(view==='pov'){camera.fov=Math.max(46,Math.min(86,camera.fov+(direction>0?-5:5)));camera.updateProjectionMatrix();}
@@ -333,7 +376,7 @@ const v=new THREE.Vector3();function frame(time){
  if(characterMixer){if(moving!==wasMoving){const from=moving?idleAction:walkAction,to=moving?walkAction:idleAction;from?.fadeOut(.15);to?.reset().fadeIn(.15).play();wasMoving=moving;}characterMixer.update(dt);if(view==='follow')renderNeeded=true;}
  for(const d of doors){const desired=d.target?-1.37:0;if(Math.abs(d.angle-desired)>.005){d.angle+=(desired-d.angle)*Math.min(1,dt*10);d.leaf.rotation.y=d.angle;renderNeeded=true;}}
  for(const l of labels){const show=!isGame()&&$('#labelToggle').checked&&l.f.root.visible&&(selected!=='all'||$('#explode').checked);l.el.style.display=show?'block':'none';if(show){v.copy(l.p);l.f.root.localToWorld(v);v.project(camera);if(v.z>1||v.z< -1){l.el.style.display='none';continue;}l.el.style.left=((v.x+1)*stage.clientWidth/2)+'px';l.el.style.top=((-v.y+1)*stage.clientHeight/2)+'px';}}
- if(renderNeeded){renderer.render(scene,camera);renderNeeded=false;}
+ if(isGame())updateGameCamera(dt);if(renderNeeded){renderer.render(scene,camera);renderNeeded=false;}
 }
 for(const btn of document.querySelectorAll('[data-floor]'))btn.onclick=()=>{const next=btn.dataset.floor;if(isGame()&&next!=='all')placeAtLevel(+next);selected=next;if(next==='all'&&isGame())view='iso';$('#walls').value=next==='all'||isGame()?'full':'cut';$('#roof').checked=next==='all';setCamera(view);};
 for(const id of ['iso','top','front','pov','follow'])$('#'+id).onclick=()=>{if(id==='pov'||id==='follow')$('#walls').value='full';setCamera(id);};
@@ -347,4 +390,4 @@ $('#save').onclick=()=>{renderer.render(scene,camera);const a=document.createEle
 $('#source').onclick=()=>{const p=selected==='all'?1:+selected+1;$('#planImage').src='plans/page-'+p+'.png';$('#planTitle').textContent='Source drawing · Page '+p+' of 4';$('#planDialog').showModal();};$('#closeDialog').onclick=()=>$('#planDialog').close();
 const moveKeys=new Set(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft']);window.addEventListener('keydown',e=>{if(!isGame()||e.target.closest('input,select,textarea'))return;if(e.code==='KeyE'){e.preventDefault();if(!e.repeat)toggleDoor();return;}if(e.code==='Equal'||e.code==='NumpadAdd'){e.preventDefault();zoomBy(1);return;}if(e.code==='Minus'||e.code==='NumpadSubtract'){e.preventDefault();zoomBy(-1);return;}if(moveKeys.has(e.code)){e.preventDefault();pressed.add(e.code);}});window.addEventListener('keyup',e=>pressed.delete(e.code));window.addEventListener('blur',()=>pressed.clear());for(const b of document.querySelectorAll('[data-move]')){b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);pressed.add(b.dataset.move);});for(const type of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(type,()=>pressed.delete(b.dataset.move));}
 let down;renderer.domElement.addEventListener('pointerdown',e=>{down=[e.clientX,e.clientY];if(view==='pov'||view==='follow'){dragLook=[e.clientX,e.clientY];renderer.domElement.setPointerCapture(e.pointerId);}});renderer.domElement.addEventListener('pointermove',e=>{if(!dragLook)return;const dx=e.clientX-dragLook[0],dy=e.clientY-dragLook[1];player.yaw-=dx*.005;player.pitch=Math.max(-.6,Math.min(.6,player.pitch-dy*.004));dragLook=[e.clientX,e.clientY];updateGameCamera();});renderer.domElement.addEventListener('pointercancel',()=>dragLook=null);renderer.domElement.addEventListener('pointerup',e=>{dragLook=null;if(view==='pov'||view==='follow')return;if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)return;const r=renderer.domElement.getBoundingClientRect(),mouse=new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),ray=new THREE.Raycaster();ray.setFromCamera(mouse,camera);const hit=ray.intersectObjects(pickables.filter(p=>p.userData.f.root.visible))[0];if(!hit)return;if(highlight)highlight.material.emissive.setHex(0);highlight=hit.object;highlight.material.emissive.setHex(0x15281a);renderNeeded=true;const d=hit.object.userData;$('#roomInfo').innerHTML='<strong>'+d.name+'</strong><span>'+d.dim+'<br>Dimensions shown on the supplied plan.</span>';});
-createModel();resize();setCamera();frame(performance.now());window.__house={scene,floors,renderer,camera,controls,pickables,labels,doors,player,stairHeight,movePlayer,blocked,zoomBy,setCamera,placeAtLevel};
+createModel();resize();setCamera();frame(performance.now());window.__house={scene,floors,renderer,camera,controls,pickables,labels,doors,player,stairSurfaces,stairHeight,walkingHeight,movePlayer,blocked,zoomBy,setCamera,placeAtLevel};

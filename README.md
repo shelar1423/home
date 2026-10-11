@@ -16,3 +16,8 @@ The published viewer contains only the four sheets dated 06 October 2026. The st
 Both walkthrough modes keep walls full height. Cutaway applies to overview modes only. The follow camera retracts around walls, door leaves and furniture and hides the avatar at very short camera distances. Furniture and animated door leaves have movement collision. Procedural plaster, stone, tile and wood textures are bundled and require no external network requests.
 
 This is still an interpreted floor-plan visualization: heights, materials and road approach are illustrative; no elevations or sections were supplied.
+
+## Stair continuity and camera regression
+The rendered stair flights and walking heights share the same surface definitions, including entry aprons, turns and exits. Upper-floor slab openings follow the stair footprint. Unsupported edges block movement. Stair signs identify up/down routes. The follow camera checks nearby storeys, slabs, steps and furniture; it retracts immediately, recovers smoothly and fades the character in confined spaces. The character faces its movement direction.
+
+`tests/walkthrough.cjs` checks 14 continuous routes in POV and follow modes, through every stair connection and the lobby door, starting at the normal spawn without teleporting between floors. With Playwright installed, run `node tests/walkthrough.cjs`. Set `CHROME_PATH` to an existing Chrome executable if needed; set `TEST_URL` to test a hosted build.
