@@ -20,6 +20,8 @@ const T={wall:surfaceTexture('wall'),floor:surfaceTexture('floor'),concrete:surf
 const M={wall:mat('#e8d9c6',{map:T.wall}),edge:mat('#948f82'),stone:mat('#c9c9bf',{map:T.concrete}),wood:mat('#ae8157',{map:T.wood}),darkwood:mat('#765a43',{map:T.wood}),fabric:mat('#c8c9b1'),sage:mat('#8fa28e'),white:mat('#f7f5ec'),black:mat('#293d3a'),metal:mat('#73817c',{metalness:.55,roughness:.3}),glass:mat('#a9ccd0',{transparent:true,opacity:.36,roughness:.13,depthWrite:false}),water:mat('#73989c'),tile:mat('#d3d8d3',{map:T.floor}),car:mat('#617a78',{metalness:.25,roughness:.25}),leaves:mat('#68825b')};
 const house=new THREE.Group();house.position.set(-3.735,0,-5.8);scene.add(house);
 const floors=[],pickables=[],labels=[],doors=[];let selected='1',view='iso',highlight=null;
+let layoutVariant=new URLSearchParams(location.search).get('layout')==='ensuite'?'ensuite':'original';
+$('#layoutVariant').value=layoutVariant;
 const player={x:5.65,z:6.25,y:4.1148,level:1,yaw:-Math.PI/2,pitch:0,followDistance:2.8,facing:Math.PI};const pressed=new Set();let dragLook=null,lastFrame=performance.now(),nearDoor=null,characterMixer=null,walkAction=null,idleAction=null,wasMoving=false;
 const avatar=new THREE.Group();scene.add(avatar);const avatarMaterials=[];let cameraBoom=2.8;
 const loader=new GLTFLoader();function installCharacter(gltf){const model=gltf.scene;const bounds=new THREE.Box3().setFromObject(model),size=bounds.getSize(new THREE.Vector3());model.scale.setScalar(1.65/Math.max(size.y,.01));const scaled=new THREE.Box3().setFromObject(model);model.position.y=-scaled.min.y;model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;o.material=o.material.clone();o.material.transparent=true;avatarMaterials.push(o.material);}});avatar.add(model);if(gltf.animations?.length){characterMixer=new THREE.AnimationMixer(model);const walk=gltf.animations.find(a=>a.name==='walk'),idle=gltf.animations.find(a=>a.name==='idle');if(walk)walkAction=characterMixer.clipAction(walk);if(idle){idleAction=characterMixer.clipAction(idle);idleAction.play();}}renderNeeded=true;}
@@ -220,8 +222,8 @@ function createModel(){
    room(f,'Kitchen','6′11½″ × 9′5½″',4.67,7.3,7.27,10.05,'#d8d9cf');
    room(f,'Utility','6′11½″ × 4′9″',4.67,10.12,7.27,11.35,'#cdd4cd');
    wall(f,.12,8.0,4.65,8.0,[door(2.48,3.29,'Bedroom')]);
-   wall(f,3.48,8.0,3.48,11.48,[[.35,1.12,0,2.15,'open']]);
-   wall(f,3.48,9.32,4.64,9.32,[door(.18,.99,'Toilet')]);
+   wall(f,3.48,8.0,3.48,11.48,[[.35,1.12,0,2.15,'open'],...(layoutVariant==='ensuite'?[door(2.10,2.94,'Bathroom')]:[])]);
+   wall(f,3.48,9.32,4.64,9.32,layoutVariant==='ensuite'?[]:[door(.18,.99,'Toilet')]);
    wall(f,4.64,7.25,4.64,11.48);
    wall(f,4.64,10.08,7.35,10.08,[door(.62,1.46,'Utility')]);
    wall(f,.12,3.38,7.35,3.38,[door(5.87,7.00,'Main entry')]);
@@ -280,6 +282,7 @@ const ambientGrid=new THREE.GridHelper(24,24,0xc4cdbf,0xd2dacb);ambientGrid.posi
 const isGame=()=>view==='pov'||view==='follow';
 function update(){
  renderNeeded=true;renderer.shadowMap.needsUpdate=true;
+ $('#layoutNote').textContent=layoutVariant==='ensuite'?'Alternative · direct bedroom access; bathroom separated from dressing and utility by solid walls.':'Current plan · bathroom access through dressing.';
  const game=isGame(),all=selected==='all',explode=$('#explode').checked&&all,cut=!game&&$('#walls').value==='cut';
  for(const f of floors){
   f.root.visible=game||all||String(f.i)===selected;
@@ -402,6 +405,7 @@ for(const btn of document.querySelectorAll('[data-floor]'))btn.onclick=()=>{cons
 for(const id of ['iso','top','front','pov','follow'])$('#'+id).onclick=()=>{if(id==='pov'||id==='follow')$('#walls').value='full';setCamera(id);};
 for(const id of ['walls','furniture','labelToggle','roof'])$('#'+id).onchange=update;
 $('#explode').onchange=()=>{if($('#explode').checked){$('#walls').value='cut';$('#roof').checked=false;}update();setCamera();};
+$('#layoutVariant').onchange=()=>{layoutVariant=$('#layoutVariant').value;const url=new URL(location.href);url.searchParams.set('layout',layoutVariant);history.replaceState(null,'',url);highlight=null;nearDoor=null;pressed.clear();createModel();if(isGame()){selected='1';placeAtLevel(1);player.x=2.98;player.z=10.52;player.yaw=Math.PI/2;player.facing=Math.PI/2;}setCamera(view);};
 $('#reset').onclick=()=>setCamera(view,true);
 $('#zoomIn').onclick=()=>zoomBy(1);$('#zoomOut').onclick=()=>zoomBy(-1);
 $('#doorAction').onclick=toggleDoor;
