@@ -140,11 +140,11 @@ const F = {
   },
   tvunit(fb, o, M) {
     const it = new Item(fb, o.x, o.z, o.rot), w = o.w || 1.6;
-    it.box(0, 1.35, -0.19, w + 0.5, 2.5, 0.04, M.woodClad);
+    it.box(0, 1.35, -0.19, w + 0.2, 2.5, 0.04, M.woodClad);
     it.box(0, 0.32, -0.02, w, 0.36, 0.4, M.laminateDark); it.box(0, 0.13, -0.02, w - 0.1, 0.02, 0.36, M.black);
     it.box(0, 1.28, -0.15, 1.25, 0.73, 0.04, M.black); it.box(0, 1.28, -0.128, 1.2, 0.68, 0.005, M.screen);
     it.box(-w / 2 + 0.2, 0.62, -0.02, 0.1, 0.22, 0.1, M.porcelain);
-    it.block(w, 0.45);
+    it.block(w + 0.2, 0.45);
   },
   counter(fb, o, M) {
     const [x1, z1, x2, z2] = o.r, it = new Item(fb, 0, 0), t = 0.04;
@@ -300,13 +300,16 @@ const F = {
 // Furniture that the Furniture toggle hides; fixtures (kitchen, sanitaryware, planters…) stay.
 const LOOSE = new Set(['bed', 'nightstand', 'wardrobe', 'tall', 'desk', 'chair', 'sofa', 'armchair', 'coffee', 'rug', 'tvunit', 'fridge', 'washer', 'car', 'bike', 'plant', 'shoes', 'balconyChair', 'swing', 'outdoorSet', 'lounger', 'dining']);
 
+// Furniture tall enough to hide the Person-view camera.
+const TALL = new Set(['wardrobe', 'tall', 'tvunit', 'fridge', 'pooja']);
+
 // ── One storey ─────────────────────────────────────────────────────────────
 export class FloorBuilder {
   constructor(M, index, extra) {
     this.M = M; this.i = index; this.plan = FLOORS[index];
     this.group = new THREE.Group(); this.group.position.y = this.plan.y; this.group.name = 'floor-' + index;
     this.batch = new Batch(); this.glassBatch = new Batch(); this.capBatch = new Batch(); this.furnBatch = new Batch();
-    this.obstacles = []; this.furnObstacles = []; this.walls = []; this.doors = []; this.fans = []; this.pickables = [];
+    this.obstacles = []; this.furnObstacles = []; this.tallObstacles = []; this.walls = []; this.doors = []; this.fans = []; this.pickables = [];
     Object.assign(this, extra);
   }
   box(x1, y1, z1, x2, y2, z2, mat, batch = this.batch) {
@@ -522,7 +525,9 @@ export class FloorBuilder {
     for (const o of p.furniture) {
       const loose = LOOSE.has(o.k);
       if (loose) { this.batch = this.furnBatch; this.obstacles = this.furnObstacles; }
+      const before = this.obstacles.length;
       F[o.k](this, o, M);
+      if (TALL.has(o.k)) this.tallObstacles.push(...this.obstacles.slice(before));
       this.batch = fixed; this.obstacles = fixedObs;
     }
     for (const s of STAIRS) if (s.from === i) this.stairs(s);

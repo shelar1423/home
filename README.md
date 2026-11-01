@@ -8,8 +8,9 @@ Live: https://shelar-residence-3d.vercel.app · or open `index.html` directly. I
 
 - **Tour**: one tap walks through all four floors with a short description of each space.
 - **Overview**: shows the whole house, or one floor cut open like a dollhouse with room names and sizes. Drag to turn, pinch or scroll to zoom, and tap a room to walk into it.
+- **Person view**: the same walking controls, but you see a person walking ahead of the camera. The camera stays inside rooms and slides in front of walls and tall furniture. Scroll or pinch to move it closer or further.
 - **Walk inside**: tap the floor where you want to go, or use the round joystick (up walks, sideways turns). Drag to look around. Doors open as you approach. Walk onto a staircase, or press the orange button that appears beside it, to change floors. Tap the mini-map to walk to that spot.
-- **Room chips** jump to any room on the current floor. **Plan** shows the original drawing sheets. **Furniture** and **Labels** show or hide the furniture and room names (both choices are remembered). **☀** switches between morning, noon and evening light.
+- **Room chips** jump to any room on the current floor. **Plan** shows the original drawing sheets. **Furniture** and **Labels** show or hide the furniture and room names (both choices are remembered). **☀** switches between morning, noon and evening light and can hide the surroundings (grass, road, trees, compound wall). The **⌄** tab on the control panel hides it for a clear view; **Show controls** brings it back.
 - Keyboard: W/S or ↑/↓ to walk, A/D or ←/→ to turn, Q/E to step sideways, Shift to go faster.
 
 ## What the model shows
@@ -39,6 +40,7 @@ The source is in `src/`:
 - `plan.js`: every room, wall, door, window, piece of furniture, staircase and tour stop, in metres measured off the sheets. Most changes happen here.
 - `builder.js`: turns the plan into geometry (walls with openings, animated doors, stairs, furniture, site).
 - `materials.js`: procedurally painted textures, so no image downloads are needed.
+- `character.js`: the jointed person used in Person view, with its walking and standing animation. It is original to this project.
 - `nav.js`: walkable grid, path finding and stair rides. `main.js` handles the viewer, controls, tour and UI. `template.html` is the page shell and styles.
 
 ```bash

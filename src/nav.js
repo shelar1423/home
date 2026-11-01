@@ -97,6 +97,12 @@ export function buildNav(floorBuilders, withFurniture = true) {
   return grids;
 }
 
+// Walls only (no furniture, open everywhere else): used to keep the Person-view camera inside rooms.
+export function buildWallGrids(floorBuilders, withFurniture = true) {
+  return floorBuilders.map((fb) => { const g = new Grid(fb.i); g.raw.fill(0); for (const r of fb.walls) g.set(r, 1); if (withFurniture) for (const r of fb.tallObstacles) g.set(r, 1); return g; });
+}
+export function wallAt(grid, x, z) { const [i, j] = grid.cell(x, z); return i >= 0 && j >= 0 && i < NX && j < NZ && grid.raw[j * NX + i] === 1; }
+
 export function groundY(level, x, z) {
   if (level > 0) return LEVEL_Y[level];
   if (z > D - 0.02) { if (z <= D + 0.05) return PARKING_Y; const t = Math.min(1, (z - D) / (ROAD_Z - D)); return PARKING_Y * (1 - t); }

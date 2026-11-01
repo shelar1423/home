@@ -39,6 +39,13 @@ const lvl = await page.evaluate(() => __home.player.level);
 console.log(lvl === 2 ? 'ok  ' : 'FAIL', 'ride ends on the second floor', lvl);
 if (lvl !== 2) failed = true;
 
+// Person view: the character shows and animates while walking.
+await page.click('[data-mode="person"]'); await page.waitForTimeout(800);
+const personOk = await page.evaluate(() => new Promise((res) => { __home.walkTo(__home.player.level, __home.player.x + 0.8, __home.player.z + 0.8); setTimeout(() => res(__home.person.root.visible && __home.state.view === 'person'), 700); }));
+console.log(personOk ? 'ok  ' : 'FAIL', 'person view shows the walking character');
+if (!personOk) failed = true;
+await page.click('[data-mode="walk"]');
+
 // Furniture and label toggles.
 await page.click('#furnBtn'); await page.click('#labelBtn');
 const toggles = await page.evaluate(() => ({ furn: __home.floors.every((f) => !f.furniture.visible), labels: document.querySelector('#labels').dataset.on === 'off' }));

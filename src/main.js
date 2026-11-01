@@ -4,7 +4,9 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { createMaterials, paintSky } from './materials.js';
 import { FloorBuilder, buildRoof, buildSite, CUT } from './builder.js';
 import { FLOORS, LEVEL_Y, W, D, BUMP, TOUR, ARRIVAL, STAIRS } from './plan.js';
-import { buildNav, groundY, stairRide, sampleRide, stairTrigger, planRoute, inRect } from './nav.js';
+import { buildNav, buildWallGrids, wallAt, groundY, stairRide, sampleRide, stairTrigger, planRoute, inRect } from './nav.js';
+import { createCharacter } from './character.js';
+import { CEIL } from './builder.js';
 
 const $ = (s) => document.querySelector(s);
 const EYE = 1.58, WALK = 1.35, RIDE = 1.05;
@@ -56,13 +58,14 @@ for (const k of ['cap', 'redLight', 'marigold', 'umbrella']) M[k].userData.metre
 const rugCache = new Map();
 const extras = { redLight: M.redLight, marigold: M.marigold, umbrella: M.umbrella, rugMat: (c) => { if (!rugCache.has(c)) { const m = M.rug(c); m.userData.metres = 0.4; rugCache.set(c, m); } return rugCache.get(c); } };
 
-let floors, roof, site, grids, gridSets, doors, fans;
+let floors, roof, site, grids, gridSets, wallGrids, doors, fans;
 function buildHouse() {
   floors = FLOORS.map((_, i) => new FloorBuilder(M, i, extras).build(M));
   for (const f of floors) world.add(f.group);
   roof = buildRoof(M); world.add(roof);
   site = buildSite(M); world.add(site);
   gridSets = { on: buildNav(floors, true), off: buildNav(floors, false) }; grids = gridSets.on;
+  wallGrids = buildWallGrids(floors, true); gridSets.wallsOn = wallGrids; gridSets.wallsOff = buildWallGrids(floors, false);
   doors = floors.flatMap((f) => f.doors);
   fans = floors.flatMap((f) => f.fans.map((r) => ({ r, level: f.i })));
 }
@@ -84,7 +87,7 @@ function setTime(name) {
 }
 
 // ── State ─────────────────────────────────────────────────────────────────
-const state = { mode: 'overview', level: 'all', fly: null, route: null, ride: null, tour: null, turn: null, selected: null, bob: 0 };
+const state = { mode: 'overview', view: 'eyes', boom: 2.6, zoom: 2.6, level: 'all', fly: null, route: null, ride: null, tour: null, turn: null, selected: null, bob: 0 };
 const player = { level: 0, x: ARRIVAL[0].x, z: ARRIVAL[0].z, y: 0, yaw: ARRIVAL[0].yaw, pitch: 0.05 };
 const controls = new OrbitControls(camera, renderer.domElement);
 Object.assign(controls, { enableDamping: true, dampingFactor: 0.08, minDistance: 4, maxDistance: 70, maxPolarAngle: Math.PI * 0.47, screenSpacePanning: true });
@@ -117,13 +120,50 @@ function setOverview(level, animate = true) {
 }
 
 // ── Walk mode ─────────────────────────────────────────────────────────────
+const person = createCharacter(); person.root.visible = false; world.add(person.root);
+let lastPos = null;
+// Is there a slab or roof overhead at this point? Then the camera must stay under it.
+function roofed(level, x, z) {
+  if (x < 0 || x > W || z < 0 || z > D) return false;
+  if (level < 3) return true;
+  return (x < 7.607 && z < 3.861) || x < 3.518;
+}
+// Person view: camera behind and above the walker, pulled in before any wall.
+function followPose(dt, snap) {
+  const elev = Math.max(0.05, Math.min(0.85, 0.32 - player.pitch * 0.9));
+  const fx = Math.sin(player.yaw), fz = Math.cos(player.yaw), head = player.y + 1.45;
+  let free = state.zoom; const g = wallGrids[player.level];
+  for (let d = 0.2; d <= state.zoom; d += 0.05) { if (wallAt(g, player.x - fx * d, player.z - fz * d)) { free = Math.max(0.35, d - 0.22); break; } }
+  if (snap || free < state.boom) state.boom = free; else state.boom += (free - state.boom) * Math.min(1, dt * 3);
+  const b = state.boom, cx = player.x - fx * b * Math.cos(elev), cz = player.z - fz * b * Math.cos(elev);
+  let cy = head + b * Math.sin(elev);
+  if (roofed(player.level, cx, cz)) cy = Math.min(cy, LEVEL_Y[player.level] + CEIL - 0.18);
+  const pos = toWorld(cx, cy, cz), target = toWorld(player.x + fx * 0.5, player.y + 1.3 - (state.boom < 1 ? 0.15 : 0), player.z + fz * 0.5);
+  const quat = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(pos, target, new THREE.Vector3(0, 1, 0)));
+  return { pos, quat };
+}
+function viewPose() { return state.view === 'person' ? followPose(0, true) : { pos: eyePos(), quat: eyeQuat(player.yaw, player.pitch) }; }
+function setView(view) {
+  state.view = view; updateUI();
+  if (state.mode === 'walk') { const p = viewPose(); flyTo(p.pos, null, p.quat, 0.6); }
+}
+function updatePerson(dt) {
+  const show = state.mode === 'walk' && state.view === 'person';
+  person.root.visible = show && state.boom > 0.55;
+  if (!show) { lastPos = null; return; }
+  const speed = lastPos && dt > 0 ? Math.hypot(player.x - lastPos[0], player.z - lastPos[1], (player.y - lastPos[2]) * 0.6) / dt : 0;
+  lastPos = [player.x, player.z, player.y];
+  person.root.position.set(player.x, player.y, player.z);
+  person.root.rotation.y += angleTo(person.root.rotation.y, player.yaw) * Math.min(1, dt * 10);
+  person.animate(Math.min(speed, 3), dt);
+}
 function eyeQuat(yaw, pitch) { return new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw + Math.PI, 0, 'YXZ')); }
-function eyePos() { return toWorld(player.x, player.y + EYE + Math.sin(state.bob) * 0.012, player.z); }
+function eyePos() { return toWorld(player.x, player.y + EYE + (state.view === 'eyes' ? Math.sin(state.bob) * 0.012 : 0), player.z); }
 function enterWalk(level, x, z, yaw, pitch = 0.02) {
   Object.assign(player, { level, x, z, yaw, pitch, y: groundY(level, x, z) });
   const was = state.mode; state.mode = 'walk'; state.selected = null; controls.enabled = false;
   applyVisibility(); updateUI();
-  if (was === 'overview') flyTo(eyePos(), null, eyeQuat(yaw, pitch), 1.3);
+  if (was === 'overview') { const p = viewPose(); flyTo(p.pos, null, p.quat, 1.3); }
 }
 function teleport(level, x, z, yaw, then) {
   fade(() => { Object.assign(player, { level, x, z, yaw, pitch: 0.02, y: groundY(level, x, z) }); state.route = null; state.ride = null; updateUI(); then?.(); });
@@ -220,7 +260,7 @@ function updateWalk(dt) {
       const mx = (fx * inp.f - fz * inp.strafe) * speed, mz = (fz * inp.f + fx * inp.strafe) * speed;
       const n = Math.max(1, Math.ceil(Math.hypot(mx, mz) / 0.05));
       for (let i = 0; i < n && !state.ride; i++) stepTo(player.x + mx / n, player.z + mz / n);
-      if (inp.f) state.bob += dt * 8;
+      if (inp.f && state.view === 'eyes') state.bob += dt * 8;
     }
   }
   if (state.turn) {
@@ -229,8 +269,8 @@ function updateWalk(dt) {
     if (t.t >= 1) { state.turn = null; t.done?.(); }
   }
   if (!state.ride) { const gy = groundY(player.level, player.x, player.z); player.y += (gy - player.y) * Math.min(1, dt * 10); }
-  camera.position.copy(eyePos());
-  camera.quaternion.copy(eyeQuat(player.yaw, player.pitch));
+  if (state.view === 'person') { const p = followPose(dt); camera.position.lerp(p.pos, Math.min(1, dt * 12)); camera.quaternion.slerp(p.quat, Math.min(1, dt * 12)); }
+  else { camera.position.copy(eyePos()); camera.quaternion.copy(eyeQuat(player.yaw, player.pitch)); }
   fill.position.copy(camera.position).y += 0.6;
   updateStairPrompt();
 }
@@ -244,8 +284,9 @@ let promptStair = null;
 function updateStairPrompt() {
   let found = null;
   if (!state.ride && !state.route) for (const s of STAIRS) {
-    if (s.from === player.level && Math.hypot(player.x - s.bottom.x, player.z - s.bottom.z) < 1.5) found = { s, up: true };
-    if (s.to === player.level && Math.hypot(player.x - s.top.x, player.z - s.top.z) < 1.5) found = { s, up: false };
+    const g = grids[player.level], near = (p) => Math.hypot(player.x - p.x, player.z - p.z) < 1.6 && g.los(player.x, player.z, p.x, p.z);
+    if (s.from === player.level && near(s.bottom)) found = { s, up: true };
+    if (s.to === player.level && near(s.top)) found = { s, up: false };
   }
   const key = found ? found.s.id + found.up : null;
   if (key === promptStair) return; promptStair = key;
@@ -404,7 +445,8 @@ function updateWhere() {
 function updateUI() {
   const walk = state.mode === 'walk';
   document.body.classList.toggle('walking', walk);
-  document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === state.mode));
+  const modeKey = state.mode === 'overview' ? 'overview' : state.view === 'person' ? 'person' : 'walk';
+  document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === modeKey));
   const active = walk ? String(player.level) : String(state.level);
   document.querySelectorAll('[data-level]').forEach((b) => b.classList.toggle('on', b.dataset.level === active));
   const L = walk ? player.level : state.level, chips = $('#rooms');
@@ -426,8 +468,10 @@ function updateUI() {
 }
 document.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => {
   $('#roomCard').hidden = true;
-  if (b.dataset.mode === 'walk') {
-    if (state.mode === 'walk') return;
+  if (b.dataset.mode !== 'overview') {
+    const view = b.dataset.mode === 'person' ? 'person' : 'eyes';
+    if (state.mode === 'walk') { setView(view); return; }
+    state.view = view;
     const L = state.level === 'all' ? 0 : state.level, a = ARRIVAL[L];
     enterWalk(L, a.x, a.z, a.yaw);
   } else setOverview(state.mode === 'walk' ? player.level : state.level);
@@ -459,7 +503,7 @@ $('#planDlg .close').onclick = () => $('#planDlg').close();
 // Show or hide loose furniture and room names. Walking routes follow the choice.
 function setFurniture(on) {
   floors.forEach((f) => (f.furniture.visible = on));
-  grids = on ? gridSets.on : gridSets.off;
+  grids = on ? gridSets.on : gridSets.off; wallGrids = on ? gridSets.wallsOn : gridSets.wallsOff;
   if (state.mode === 'walk') { state.route = null; hideMarker(); const p = grids[player.level].nearest(player.x, player.z, 3); if (p) [player.x, player.z] = p; }
   $('#furnBtn').classList.toggle('off', !on); $('#furnBtn').setAttribute('aria-pressed', on);
   renderer.shadowMap.needsUpdate = true; tryStore('shelar-furniture', on ? '1' : '0');
@@ -469,6 +513,17 @@ function setLabels(on) {
   $('#labelBtn').classList.toggle('off', !on); $('#labelBtn').setAttribute('aria-pressed', on);
   tryStore('shelar-labels', on ? '1' : '0');
 }
+function setSurroundings(on) {
+  site.visible = on; renderer.shadowMap.needsUpdate = true;
+  $('#siteBtn').textContent = on ? 'Hide surroundings' : 'Show surroundings'; tryStore('shelar-site', on ? '1' : '0');
+}
+$('#siteBtn').onclick = () => { setSurroundings(!site.visible); $('#sunMenu').hidden = true; };
+function setPanel(open) {
+  document.body.classList.toggle('collapsed', !open); $('#dockShow').hidden = open;
+  tryStore('shelar-panel', open ? '1' : '0');
+}
+$('#dockHide').onclick = () => setPanel(false);
+$('#dockShow').onclick = () => setPanel(true);
 $('#furnBtn').onclick = () => { setFurniture($('#furnBtn').classList.contains('off')); toast($('#furnBtn').classList.contains('off') ? 'Furniture hidden' : 'Furniture shown'); };
 $('#labelBtn').onclick = () => { setLabels($('#labelBtn').classList.contains('off')); toast($('#labelBtn').classList.contains('off') ? 'Room names hidden' : 'Room names shown'); };
 $('#sunBtn').onclick = (e) => { e.stopPropagation(); $('#sunMenu').hidden = !$('#sunMenu').hidden; };
@@ -488,7 +543,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
 renderer.domElement.addEventListener('pointermove', (e) => {
   if (!down || e.pointerId !== down.id) return;
   if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) down.moved = true;
-  if (state.mode === 'walk' && down.moved && !state.ride) {
+  if (state.mode === 'walk' && down.moved && !state.ride && touches.size < 2) {
     const k = coarse ? 0.0055 : 0.0042;
     player.yaw += (e.clientX - down.lx) * k; player.pitch = Math.max(-0.75, Math.min(0.75, player.pitch + (e.clientY - down.ly) * k));
     state.turn = null;
@@ -499,7 +554,19 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (down && !down.moved && performance.now() - down.t < 450) onTap(e);
   down = null;
 });
-renderer.domElement.addEventListener('wheel', (e) => { if (state.mode === 'walk') { e.preventDefault(); camera.fov = Math.max(40, Math.min(85, camera.fov + Math.sign(e.deltaY) * 4)); camera.updateProjectionMatrix(); } }, { passive: false });
+function zoomWalk(k) {
+  if (state.view === 'person') state.zoom = Math.max(1.3, Math.min(4.5, state.zoom * k));
+  else { camera.fov = Math.max(40, Math.min(85, camera.fov * k)); camera.updateProjectionMatrix(); }
+}
+renderer.domElement.addEventListener('wheel', (e) => { if (state.mode === 'walk') { e.preventDefault(); zoomWalk(e.deltaY > 0 ? 1.08 : 0.93); } }, { passive: false });
+// Two-finger pinch zooms while walking (orbit controls handle it in the overview).
+const touches = new Map(); let pinch = 0;
+renderer.domElement.addEventListener('pointerdown', (e) => { touches.set(e.pointerId, [e.clientX, e.clientY]); if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); if (down) down.moved = true; } });
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!touches.has(e.pointerId)) return; touches.set(e.pointerId, [e.clientX, e.clientY]);
+  if (touches.size === 2 && state.mode === 'walk') { const [a, b] = [...touches.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (pinch) zoomWalk(pinch / d); pinch = d; }
+});
+for (const ev of ['pointerup', 'pointercancel']) renderer.domElement.addEventListener(ev, (e) => { touches.delete(e.pointerId); pinch = 0; });
 addEventListener('keydown', (e) => {
   if (e.target.closest?.('input, select, textarea, dialog')) return;
   if (state.mode === 'walk' && /^(Key[WASDQE]|Arrow\w+|Shift\w+)$/.test(e.code)) { keys.add(e.code); e.preventDefault(); }
@@ -545,7 +612,7 @@ function frame(now) {
   const near = state.mode === 'walk' && !state.fly ? 0.05 : state.mode === 'walk' ? 0.12 : 0.6, far = state.mode === 'walk' ? 260 : 400;
   if (camera.near !== near || camera.far !== far) { camera.near = near; camera.far = far; camera.updateProjectionMatrix(); }
   sun.target.position.set(0, 4, 0);
-  updateDoors(dt); updateLabels(); updateWhere();
+  updatePerson(dt); updateDoors(dt); updateLabels(); updateWhere();
   if (state.mode === 'walk') drawMinimap();
   renderer.render(scene, camera);
 }
@@ -554,9 +621,10 @@ function frame(now) {
 requestAnimationFrame(() => setTimeout(() => {
   buildHouse(); makeLabels(); setTime('morning'); resize();
   setFurniture(tryStore('shelar-furniture') !== '0'); setLabels(tryStore('shelar-labels') !== '0');
+  setSurroundings(tryStore('shelar-site') !== '0'); setPanel(tryStore('shelar-panel') !== '0');
   setOverview('all', false); updateUI();
   renderer.setAnimationLoop(frame);
   $('#loader').classList.add('done'); setTimeout(() => $('#loader').remove(), 700);
   if (!tryStore('shelar-help')) setTimeout(() => $('#help').showModal(), 900);
-  window.__home = { get grids() { return grids; }, setFurniture, setLabels, state, player, floors, walkTo, enterWalk, setOverview, startTour, goToRoom, camera, renderer, scene, teleport, STAIRS };
+  window.__home = { get grids() { return grids; }, setFurniture, setLabels, setView, setSurroundings, setPanel, person, state, player, floors, walkTo, enterWalk, setOverview, startTour, goToRoom, camera, renderer, scene, teleport, STAIRS };
 }, 30));
