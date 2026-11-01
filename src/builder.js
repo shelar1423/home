@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { W, D, STOREY, SLAB, LEVEL_Y, ROOF_Y, PARKING_Y, FLOORS, ROOF, STAIRS } from './plan.js';
+import { W, D, STOREY, SLAB, LEVEL_Y, ROOF_Y, PARKING_Y, PARKING_X, BUMP, FLOORS, ROOF, STAIRS } from './plan.js';
 
 export const CEIL = STOREY - SLAB;   // clear height of a room
 export const CUT = 1.5;               // dollhouse section height above each floor
@@ -135,9 +135,8 @@ const F = {
   },
   rug(fb, o, M) {
     const [x1, z1, x2, z2] = o.r, it = new Item(fb, 0, 0);
-    it.box((x1 + x2) / 2, 0.018, (z1 + z2) / 2, x2 - x1, 0.012, z2 - z1, fb.rugMat(o.c));
-    it.box((x1 + x2) / 2, 0.019, (z1 + z2) / 2, x2 - x1 - 0.2, 0.012, z2 - z1 - 0.2, fb.rugMat('#ece3d3'));
-    it.box((x1 + x2) / 2, 0.02, (z1 + z2) / 2, x2 - x1 - 0.3, 0.012, z2 - z1 - 0.3, fb.rugMat(o.c));
+    it.box((x1 + x2) / 2, 0.024, (z1 + z2) / 2, x2 - x1, 0.012, z2 - z1, fb.rugMat('#ece3d3'));
+    it.box((x1 + x2) / 2, 0.031, (z1 + z2) / 2, x2 - x1 - 0.18, 0.012, z2 - z1 - 0.18, fb.rugMat(o.c));
   },
   tvunit(fb, o, M) {
     const it = new Item(fb, o.x, o.z, o.rot), w = o.w || 1.6;
@@ -298,13 +297,16 @@ const F = {
   },
 };
 
+// Furniture that the Furniture toggle hides; fixtures (kitchen, sanitaryware, planters…) stay.
+const LOOSE = new Set(['bed', 'nightstand', 'wardrobe', 'tall', 'desk', 'chair', 'sofa', 'armchair', 'coffee', 'rug', 'tvunit', 'fridge', 'washer', 'car', 'bike', 'plant', 'shoes', 'balconyChair', 'swing', 'outdoorSet', 'lounger', 'dining']);
+
 // ── One storey ─────────────────────────────────────────────────────────────
 export class FloorBuilder {
   constructor(M, index, extra) {
     this.M = M; this.i = index; this.plan = FLOORS[index];
     this.group = new THREE.Group(); this.group.position.y = this.plan.y; this.group.name = 'floor-' + index;
-    this.batch = new Batch(); this.glassBatch = new Batch(); this.capBatch = new Batch();
-    this.obstacles = []; this.walls = []; this.doors = []; this.fans = []; this.pickables = [];
+    this.batch = new Batch(); this.glassBatch = new Batch(); this.capBatch = new Batch(); this.furnBatch = new Batch();
+    this.obstacles = []; this.furnObstacles = []; this.walls = []; this.doors = []; this.fans = []; this.pickables = [];
     Object.assign(this, extra);
   }
   box(x1, y1, z1, x2, y2, z2, mat, batch = this.batch) {
@@ -367,8 +369,8 @@ export class FloorBuilder {
     if (b - a > 1.1 && !op.vent) box((a + b) / 2 - 0.02, sill, (a + b) / 2 + 0.02, head, -0.035, 0.035, M.frame);
     if (op.vent) for (let y = sill + 0.08; y < head - 0.04; y += 0.08) box(a + f, y, b - f, y + 0.012, -0.03, 0.03, M.frame);
     box(a + f, sill + f, b - f, head - f, -0.006, 0.006, op.vent ? M.frosted : M.glass, this.glassBatch);
-    if (w.ext && sill > 0.05) { const s = outSign; box(a - 0.05, sill - 0.04, b + 0.05, sill, s > 0 ? th / 2 : -th / 2 - 0.06, s > 0 ? th / 2 + 0.06 : -th / 2, M.granite); }
-    if (w.ext && sill > 0.05) { const s = outSign; box(a - 0.03, sill - 0.03, b + 0.03, sill, s > 0 ? -th / 2 - 0.04 : th / 2, s > 0 ? -th / 2 : th / 2 + 0.04, M.white); }
+    if (w.ext && sill > 0.05) { const s = outSign; box(a - 0.05, sill - 0.03, b + 0.05, sill + 0.015, s > 0 ? th / 2 : -th / 2 - 0.06, s > 0 ? th / 2 + 0.06 : -th / 2, M.granite); }
+    if (w.ext && sill > 0.05) { const s = outSign; box(a - 0.03, sill - 0.02, b + 0.03, sill + 0.012, s > 0 ? -th / 2 - 0.04 : th / 2, s > 0 ? -th / 2 : th / 2 + 0.04, M.white); }
   }
 
   hingedDoor(w, op, alongX) {
@@ -455,7 +457,7 @@ export class FloorBuilder {
   roomFloor(room) {
     const M = this.M, [x1, z1, x2, z2] = room.r, y = room.y || 0;
     const mat = { wood: M.wood, bath: M.bath, tile: M.tile, granite: M.lobby, pavers: M.pavers, deck: M.deck, terrace: M.terrace, marble: M.marble }[room.f];
-    if (mat) this.box(x1, y + 0.002, z1, x2, y + 0.016, z2, mat);
+    if (mat) this.box(x1, y + 0.004, z1, x2, y + 0.016, z2, mat);
     // invisible picking plane for room selection
     const pick = new THREE.Mesh(new THREE.PlaneGeometry(x2 - x1, z2 - z1).rotateX(-Math.PI / 2), this.pickMat);
     pick.position.set((x1 + x2) / 2, y + 0.03, (z1 + z2) / 2); pick.userData.room = room; pick.userData.level = this.i;
@@ -499,15 +501,13 @@ export class FloorBuilder {
         if (f.axis === 'z') tread(f.x1, lo, f.x2, hi, f.k0 + i); else tread(lo, f.z1, hi, f.z2, f.k0 + i);
       }
       // handrail on the inner (well) side of the flight
-      const inner = s.id === 'lobby' ? 9.75 : null;
       const pts = [];
       for (let i = 0; i <= f.n; i++) {
-        const u = f.s0 + step * i, y = h(f.k0 + i - 1) + 0.0;
-        if (f.axis === 'z') pts.push([inner ?? (f.x1 === 3.6 ? 4.53 : 6.77), y, u]); else pts.push([u, y, 1.13]);
+        const u = f.s0 + step * i, y = h(f.k0 + i - 1);
+        if (f.axis === 'z') pts.push([f.rail, y, u]); else pts.push([u, y, f.rail]);
       }
       if (pts.length > 1) rail(pts);
     }
-    // stringer walls below the flights where they are free-standing
   }
 
   build(M) {
@@ -518,24 +518,30 @@ export class FloorBuilder {
     for (const pp of p.parapets || []) this.parapet(pp);
     for (const r of p.railings || []) this.railing(...r);
     for (const room of p.rooms) this.roomFloor(room);
-    for (const o of p.furniture) F[o.k](this, o, M);
+    const fixed = this.batch, fixedObs = this.obstacles;
+    for (const o of p.furniture) {
+      const loose = LOOSE.has(o.k);
+      if (loose) { this.batch = this.furnBatch; this.obstacles = this.furnObstacles; }
+      F[o.k](this, o, M);
+      this.batch = fixed; this.obstacles = fixedObs;
+    }
     for (const s of STAIRS) if (s.from === i) this.stairs(s);
     this.batch.build(this.group); this.glassBatch.build(this.group, { shadows: false });
+    this.furniture = new THREE.Group(); this.furnBatch.build(this.furniture); this.group.add(this.furniture);
     this.caps = new THREE.Group(); this.capBatch.build(this.caps, { shadows: false }); this.caps.visible = false; this.group.add(this.caps);
     return this;
   }
 
   plinth() {
-    const M = this.M, top = 0, low = PARKING_Y - LEVEL_Y[0];
-    const pieces = [[-0.37, 3.6, 0, D], [0, 0, 4.95, D], [8.45, 0, W, D]];
-    for (const [x1, z1, x2, z2] of pieces) { this.box(x1, -LEVEL_Y[0], z1, x2, top, z2, M.concrete); }
-    this.box(4.95, -LEVEL_Y[0], 0, 8.45, low, D, M.concrete);
-    // stone-clad plinth faces
-    this.box(-0.38, -LEVEL_Y[0], D, 4.95, 0, D + 0.02, M.stone); this.box(8.45, -LEVEL_Y[0], D, W, 0, D + 0.02, M.stone);
-    this.box(-0.39, -LEVEL_Y[0], 3.6, -0.37, 0, D, M.stone); this.box(-0.02, -LEVEL_Y[0], 0, 0, 0, 3.6, M.stone);
-    this.box(W, -LEVEL_Y[0], 0, W + 0.02, 0, D, M.stone); this.box(0, -LEVEL_Y[0], -0.02, W, 0, 0, M.stone);
-    this.box(4.95, low, 7.08, 8.45, low + 0.02, D, M.granite);
-    this.box(4.93, low, 0.23, 4.95, 0, 7.11, M.granite);
+    const M = this.M, L = LEVEL_Y[0], low = PARKING_Y - L, [P1, P2] = PARKING_X, Z1 = 141 * 0.0254;
+    for (const [x1, z1, x2, z2] of [[BUMP, Z1, 0, D], [0, 0, P1, D], [P2, 0, W, D]]) this.box(x1, -L, z1, x2, 0, z2, M.concrete);
+    this.box(P1, -L, 0, P2, low, D, M.concrete);
+    // stone-clad plinth faces, set 2 cm proud of the walls
+    this.box(BUMP - 0.02, -L, D, P1, -0.002, D + 0.02, M.stone); this.box(P2, -L, D, W + 0.02, -0.002, D + 0.02, M.stone);
+    this.box(BUMP - 0.02, -L, Z1, BUMP, -0.002, D, M.stone); this.box(-0.02, -L, 0, 0, -0.002, Z1, M.stone);
+    this.box(BUMP - 0.02, -L, Z1 - 0.02, 0, -0.002, Z1, M.stone);
+    this.box(W, -L, 0, W + 0.02, -0.002, D, M.stone); this.box(-0.02, -L, -0.02, W + 0.02, -0.002, 0, M.stone);
+    this.box(P1, low, D - 0.04, P2, low + 0.025, D, M.granite);
   }
 }
 
@@ -565,19 +571,20 @@ export function buildSite(M) {
   const PX1 = -0.51, PX2 = W + 0.51, PZ1 = -0.51, PZ2 = D + 0.36; // plot after 1′8″ / 1′2″ setbacks
   box(-60, -0.2, -60, 60, -0.02, PZ2 + 0.0, M.grass);
   box(-60, -0.2, PZ2 + 14.6, 60, -0.02, 60, M.grass);
-  box(PX1, -0.02, PZ1, PX2, 0.5, PZ2, M.soil);
+  box(PX1, -0.02, PZ1, PX2, 0.5, PZ2 - 0.15, M.soil);
   // 40′ road with kerbs and markings
   box(-60, -0.2, PZ2 + 1.2, 60, 0.0, PZ2 + 13.4, M.asphalt);
-  box(-60, -0.2, PZ2, 60, 0.12, PZ2 + 1.2, M.kerb); box(-60, -0.2, PZ2 + 13.4, 60, 0.12, PZ2 + 14.6, M.kerb);
+  box(-60, -0.2, PZ2 + 0.002, 60, 0.12, PZ2 + 1.2, M.kerb); box(-60, -0.2, PZ2 + 13.4, 60, 0.12, PZ2 + 14.6, M.kerb);
   for (let x = -58; x < 60; x += 4) box(x, 0.0, PZ2 + 7.25, x + 2.2, 0.012, PZ2 + 7.37, M.roadPaint);
   // driveway ramp from the parking (+2′0″) down to the road
-  const ramp = new THREE.BoxGeometry(3.5, 0.1, Math.hypot(PZ2 + 1.2 - D, PARKING_Y));
-  ramp.rotateX(Math.atan2(PARKING_Y, PZ2 + 1.2 - D)); ramp.translate(6.7, PARKING_Y / 2 - 0.05, (D + PZ2 + 1.2) / 2); b.add(ramp, M.pavers);
+  const ramp = new THREE.BoxGeometry(PARKING_X[1] - PARKING_X[0], 0.1, Math.hypot(PZ2 + 1.2 - D, PARKING_Y));
+  ramp.rotateX(Math.atan2(PARKING_Y, PZ2 + 1.2 - D)); ramp.translate((PARKING_X[0] + PARKING_X[1]) / 2, PARKING_Y / 2 - 0.045, (D + PZ2 + 1.2) / 2); b.add(ramp, M.pavers);
   // compound wall with gate pillars
   const cw = (x1, z1, x2, z2, h = 1.5) => { box(x1, 0, z1, x2, h, z2, M.exterior); box(x1 - 0.02, h, z1 - 0.02, x2 + 0.02, h + 0.05, z2 + 0.02, M.coping); };
   cw(PX1 - 0.15, PZ1 - 0.15, PX2 + 0.15, PZ1); cw(PX1 - 0.15, PZ1, PX1, PZ2); cw(PX2, PZ1, PX2 + 0.15, PZ2);
-  cw(PX1 - 0.15, PZ2 - 0.15, 4.75, PZ2, 1.2); cw(8.65, PZ2 - 0.15, PX2 + 0.15, PZ2, 1.2);
-  for (const x of [4.45, 8.65]) { box(x, 0, PZ2 - 0.3, x + 0.3, 1.7, PZ2, M.accent); box(x - 0.03, 1.7, PZ2 - 0.33, x + 0.33, 1.78, PZ2 + 0.03, M.coping); box(x + 0.08, 1.45, PZ2 + 0.001, x + 0.22, 1.55, PZ2 + 0.01, M.lamp); }
+  const G1 = PARKING_X[0] - 0.3, G2 = PARKING_X[1];
+  cw(PX1 - 0.15, PZ2 - 0.15, G1, PZ2, 1.2); cw(G2 + 0.3, PZ2 - 0.15, PX2 + 0.15, PZ2, 1.2);
+  for (const x of [G1, G2]) { box(x, 0, PZ2 - 0.3, x + 0.3, 1.7, PZ2, M.accent); box(x - 0.03, 1.7, PZ2 - 0.33, x + 0.33, 1.78, PZ2 + 0.03, M.coping); box(x + 0.08, 1.45, PZ2 + 0.001, x + 0.22, 1.55, PZ2 + 0.01, M.lamp); }
   // house name plate
   // trees and street lights for scale
   const tree = (x, z, s) => { const it = new Item(fb, x, z); it.cyl(0, 1.4 * s, 0, 0.12 * s, 0.18 * s, 2.8 * s, M.trunk, 10); for (let i = 0; i < 7; i++) { const a = i * 0.9; it.sphere(Math.sin(a) * 1.0 * s, (3.1 + (i % 3) * 0.5) * s, Math.cos(a) * 1.0 * s, 1.15 * s, i % 2 ? M.leaf : M.leafDark, 1, 0.85, 1); } };

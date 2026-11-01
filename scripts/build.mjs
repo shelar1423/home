@@ -10,7 +10,8 @@ for (let p = 1; p <= 6; p++) {
   const f = `plans/sheet-${p}.jpg`;
   if (existsSync(f)) sheets[p] = 'data:image/jpeg;base64,' + readFileSync(f).toString('base64');
 }
-const html = readFileSync('src/template.html', 'utf8').replace('<!--BUNDLE-->',
+// A replacer function, so `$'` and friends inside the bundle are not treated as patterns.
+const html = readFileSync('src/template.html', 'utf8').replace('<!--BUNDLE-->', () =>
   `<script>window.PLAN_SHEETS=${JSON.stringify(sheets)}</script>\n<script>/* Three.js © 2010-2024 three.js authors, MIT License */\n${js}</script>`);
 writeFileSync('index.html', html);
 console.log(`index.html written (${(html.length / 1048576).toFixed(2)} MB)`);

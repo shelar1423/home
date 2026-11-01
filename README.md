@@ -9,14 +9,14 @@ Live: https://shelar-residence-3d.vercel.app · or open `index.html` directly. I
 - **Tour**: one tap walks through all four floors with a short description of each space.
 - **Overview**: shows the whole house, or one floor cut open like a dollhouse with room names and sizes. Drag to turn, pinch or scroll to zoom, and tap a room to walk into it.
 - **Walk inside**: tap the floor where you want to go, or use the round joystick (up walks, sideways turns). Drag to look around. Doors open as you approach. Walk onto a staircase, or press the orange button that appears beside it, to change floors. Tap the mini-map to walk to that spot.
-- **Room chips** jump to any room on the current floor. **Plan** shows the original drawing sheets. **☀** switches between morning, noon and evening light.
+- **Room chips** jump to any room on the current floor. **Plan** shows the original drawing sheets. **Furniture** and **Labels** show or hide the furniture and room names (both choices are remembered). **☀** switches between morning, noon and evening light.
 - Keyboard: W/S or ↑/↓ to walk, A/D or ←/→ to turn, Q/E to step sideways, Shift to go faster.
 
 ## What the model shows
 
 | Level | Height | Spaces |
 |---|---|---|
-| Ground | +2′6″ (parking +2′0″) | Bedroom with dressing and toilet, hall with open kitchen, utility (projects 1′2″ on the left side as drawn), parking for a car and two bikes, entrance lobby with stairs |
+| Ground | +2′6″ (parking +2′0″) | Bedroom with dressing and toilet, hall with open kitchen, utility (projects to the 1′8″ left setback as drawn), parking for a car and two bikes, entrance lobby with stairs |
 | 1st | +13′6″ | Living, dining under the stair void, kitchen, utility, guest bedroom, toilet and common toilet, lobby with main door |
 | 2nd | +24′6″ | Master bedroom and second bedroom, each with walk-in wardrobe, toilet and balcony; living with study desks; pooja |
 | Penthouse | +35′6″ | Bedroom suite with balcony, stair lobby, open terrace with skylight over the pooja and a safety ladder to the roof |
@@ -24,7 +24,13 @@ Live: https://shelar-residence-3d.vercel.app · or open `index.html` directly. I
 
 The lobby staircase connects the ground and first floors. The internal U-shaped staircase connects the first floor, second floor and penthouse around an open void.
 
-The drawing is marked NTS (not to scale), so positions are scaled from the sheets against the printed dimensions (36′ × 23′4″ building, 1′8″/1′2″ setbacks) and are accurate to a few centimetres, not to construction tolerance. Elevations were not supplied: facade colours, window heights, finishes and furniture are illustrative. The 1st-floor sheet repeats the lobby flight numbering 23–44, but the 2nd floor has rooms above it, so that staircase ends at the first floor.
+Rooms are laid out from the printed sizes, not scaled off the sheet: every labelled room has exactly its printed clear size, with 9″ outer walls and 4½″ partitions, inside the 36′1″ × 23′4″ building from the site plan. `src/plan.js` records the arithmetic for each floor. Where the printed figures contradict each other, the model follows the room sizes:
+
+- Ground floor parking: the sheet prints 11′3″, but the bedroom, toilet and lobby widths leave 10′6″ between the hall wall and the lobby.
+- Ground floor utility: printed 3′2″ × 10′10″, but the hall depth (10′5½″) fixes it at 10′5½″. Its outer wall is 4½″, so it ends on the 1′8″ setback line.
+- First floor living: printed 12′8½″ × 7′4″, but the space between the kitchen wall and the lobby wall is 11′1½″. The front-to-back figures on this floor total 23′4½″, so the front wall is 8½″.
+
+Elevations were not supplied: facade colours, window heights, finishes and furniture are illustrative. The 1st-floor sheet repeats the lobby flight numbering 23–44, but the 2nd floor has rooms above it, so that staircase ends at the first floor.
 
 ## Editing
 

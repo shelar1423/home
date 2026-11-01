@@ -1,4 +1,4 @@
-import { W, D, LEVEL_Y, PARKING_Y, STOREY, STAIRS, FLOORS } from './plan.js';
+import { W, D, LEVEL_Y, PARKING_Y, PARKING_X, BUMP, STOREY, STAIRS, FLOORS } from './plan.js';
 
 // A walkable-cell grid per storey. Cells are 10 cm; the grid is inflated by the
 // walker's radius so a path through free cells never clips a wall.
@@ -76,19 +76,20 @@ class Grid {
   }
 }
 
-export function buildNav(floorBuilders) {
+export function buildNav(floorBuilders, withFurniture = true) {
   const grids = [];
   for (const fb of floorBuilders) {
     const grid = new Grid(fb.i), p = FLOORS[fb.i];
     // open the storey's own footprint, then the street-front at ground level
     grid.set([0.02, 0.02, W - 0.02, D - 0.02], 0);
     if (fb.i === 0) {
-      grid.set([-0.35, 3.6, 0.02, D - 0.02], 0);
-      grid.set([4.75, D - 0.05, 8.65, ROAD_Z], 0);          // gate and driveway
+      grid.set([BUMP + 0.02, 3.6, 0.02, D - 0.02], 0);
+      grid.set([PARKING_X[0], D - 0.05, PARKING_X[1], ROAD_Z], 0);   // gate and driveway
       grid.set([-1.4, ROAD_Z, W + 1.4, Z1 - 0.2], 0);       // the road
     }
     for (const r of fb.walls) grid.set(r, 1);
     for (const r of fb.obstacles) grid.set(r, 1);
+    if (withFurniture) for (const r of fb.furnObstacles) grid.set(r, 1);
     for (const r of p.extraBlocks || []) grid.set(r, 1);
     grid.inflate();
     grids.push(grid);
@@ -99,7 +100,7 @@ export function buildNav(floorBuilders) {
 export function groundY(level, x, z) {
   if (level > 0) return LEVEL_Y[level];
   if (z > D - 0.02) { if (z <= D + 0.05) return PARKING_Y; const t = Math.min(1, (z - D) / (ROAD_Z - D)); return PARKING_Y * (1 - t); }
-  if (x > 4.95 && x < 8.45) return PARKING_Y;
+  if (x > PARKING_X[0] && x < PARKING_X[1]) return PARKING_Y;
   return LEVEL_Y[0];
 }
 

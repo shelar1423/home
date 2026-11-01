@@ -39,6 +39,15 @@ const lvl = await page.evaluate(() => __home.player.level);
 console.log(lvl === 2 ? 'ok  ' : 'FAIL', 'ride ends on the second floor', lvl);
 if (lvl !== 2) failed = true;
 
+// Furniture and label toggles.
+await page.click('#furnBtn'); await page.click('#labelBtn');
+const toggles = await page.evaluate(() => ({ furn: __home.floors.every((f) => !f.furniture.visible), labels: document.querySelector('#labels').dataset.on === 'off' }));
+await page.click('#furnBtn'); await page.click('#labelBtn');
+const back = await page.evaluate(() => __home.floors.every((f) => f.furniture.visible) && document.querySelector('#labels').dataset.on === 'on');
+const togglesOk = toggles.furn && toggles.labels && back;
+console.log(togglesOk ? 'ok  ' : 'FAIL', 'furniture and label buttons hide and show', JSON.stringify(toggles));
+if (!togglesOk) failed = true;
+
 console.log(errors.length ? 'FAIL page errors ' + JSON.stringify(errors) : 'ok   no page errors');
 await browser.close();
 process.exit(failed || errors.length ? 1 : 0);

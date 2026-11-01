@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { createMaterials, paintSky } from './materials.js';
 import { FloorBuilder, buildRoof, buildSite, CUT } from './builder.js';
-import { FLOORS, LEVEL_Y, W, D, TOUR, ARRIVAL, STAIRS } from './plan.js';
+import { FLOORS, LEVEL_Y, W, D, BUMP, TOUR, ARRIVAL, STAIRS } from './plan.js';
 import { buildNav, groundY, stairRide, sampleRide, stairTrigger, planRoute, inRect } from './nav.js';
 
 const $ = (s) => document.querySelector(s);
@@ -56,13 +56,13 @@ for (const k of ['cap', 'redLight', 'marigold', 'umbrella']) M[k].userData.metre
 const rugCache = new Map();
 const extras = { redLight: M.redLight, marigold: M.marigold, umbrella: M.umbrella, rugMat: (c) => { if (!rugCache.has(c)) { const m = M.rug(c); m.userData.metres = 0.4; rugCache.set(c, m); } return rugCache.get(c); } };
 
-let floors, roof, site, grids, doors, fans;
+let floors, roof, site, grids, gridSets, doors, fans;
 function buildHouse() {
   floors = FLOORS.map((_, i) => new FloorBuilder(M, i, extras).build(M));
   for (const f of floors) world.add(f.group);
   roof = buildRoof(M); world.add(roof);
   site = buildSite(M); world.add(site);
-  grids = buildNav(floors);
+  gridSets = { on: buildNav(floors, true), off: buildNav(floors, false) }; grids = gridSets.on;
   doors = floors.flatMap((f) => f.doors);
   fans = floors.flatMap((f) => f.fans.map((r) => ({ r, level: f.i })));
 }
@@ -370,10 +370,10 @@ const finishColor = { wood: '#d9c3a3', bath: '#c7d3d8', tile: '#ece7de', granite
 function drawMinimap() {
   const dpr = Math.min(devicePixelRatio, 2), cw = mini.clientWidth, ch = mini.clientHeight;
   if (mini.width !== cw * dpr) { mini.width = cw * dpr; mini.height = ch * dpr; }
-  const pad = 8, sx = (cw - pad * 2) / (W + 0.4), s = Math.min(sx, (ch - pad * 2) / (D + 0.2)), ox = pad + 0.37 * s, oz = (ch - D * s) / 2;
+  const pad = 8, sx = (cw - pad * 2) / (W + 0.4), s = Math.min(sx, (ch - pad * 2) / (D + 0.2)), ox = pad - BUMP * s, oz = (ch - D * s) / 2;
   mctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.clearRect(0, 0, cw, ch);
   const L = player.level, X = (x) => ox + x * s, Z = (z) => oz + z * s;
-  mctx.fillStyle = '#f7f4ee'; mctx.fillRect(X(L === 0 ? -0.37 : 0), Z(0), (W + (L === 0 ? 0.37 : 0)) * s, D * s);
+  mctx.fillStyle = '#f7f4ee'; mctx.fillRect(X(L === 0 ? BUMP : 0), Z(0), (W - (L === 0 ? BUMP : 0)) * s, D * s);
   for (const r of FLOORS[L].rooms) { mctx.fillStyle = r.stair ? '#d9d4ca' : finishColor[r.f] || '#ece7de'; mctx.fillRect(X(r.r[0]), Z(r.r[1]), (r.r[2] - r.r[0]) * s, (r.r[3] - r.r[1]) * s); }
   mctx.fillStyle = '#4a4744'; for (const r of floors[L].walls) mctx.fillRect(X(r[0]), Z(r[1]), Math.max(1, (r[2] - r[0]) * s), Math.max(1, (r[3] - r[1]) * s));
   mctx.save(); mctx.translate(X(player.x), Z(player.z)); mctx.rotate(-player.yaw);
@@ -456,6 +456,21 @@ function showSheet(p) {
 }
 document.querySelectorAll('[data-sheet]').forEach((b) => (b.onclick = () => showSheet(+b.dataset.sheet)));
 $('#planDlg .close').onclick = () => $('#planDlg').close();
+// Show or hide loose furniture and room names. Walking routes follow the choice.
+function setFurniture(on) {
+  floors.forEach((f) => (f.furniture.visible = on));
+  grids = on ? gridSets.on : gridSets.off;
+  if (state.mode === 'walk') { state.route = null; hideMarker(); const p = grids[player.level].nearest(player.x, player.z, 3); if (p) [player.x, player.z] = p; }
+  $('#furnBtn').classList.toggle('off', !on); $('#furnBtn').setAttribute('aria-pressed', on);
+  renderer.shadowMap.needsUpdate = true; tryStore('shelar-furniture', on ? '1' : '0');
+}
+function setLabels(on) {
+  $('#labels').dataset.on = on ? 'on' : 'off';
+  $('#labelBtn').classList.toggle('off', !on); $('#labelBtn').setAttribute('aria-pressed', on);
+  tryStore('shelar-labels', on ? '1' : '0');
+}
+$('#furnBtn').onclick = () => { setFurniture($('#furnBtn').classList.contains('off')); toast($('#furnBtn').classList.contains('off') ? 'Furniture hidden' : 'Furniture shown'); };
+$('#labelBtn').onclick = () => { setLabels($('#labelBtn').classList.contains('off')); toast($('#labelBtn').classList.contains('off') ? 'Room names hidden' : 'Room names shown'); };
 $('#sunBtn').onclick = (e) => { e.stopPropagation(); $('#sunMenu').hidden = !$('#sunMenu').hidden; };
 document.querySelectorAll('[data-time]').forEach((b) => (b.onclick = () => { setTime(b.dataset.time); $('#sunMenu').hidden = true; }));
 $('#fsBtn').onclick = () => { const d = document; if (d.fullscreenElement) d.exitFullscreen?.(); else d.documentElement.requestFullscreen?.().catch(() => {}); };
@@ -527,6 +542,8 @@ function frame(now) {
   const wantFov = state.mode === 'walk' ? (camera.aspect < 1 ? 70 : 62) : 45;
   if (!state.fly && Math.abs(camera.fov - wantFov) > 0.1 && state.mode === 'overview') { camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 4); camera.updateProjectionMatrix(); }
   if (state.fly && state.mode === 'walk' && Math.abs(camera.fov - wantFov) > 0.1) { camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); }
+  const near = state.mode === 'walk' && !state.fly ? 0.05 : state.mode === 'walk' ? 0.12 : 0.6, far = state.mode === 'walk' ? 260 : 400;
+  if (camera.near !== near || camera.far !== far) { camera.near = near; camera.far = far; camera.updateProjectionMatrix(); }
   sun.target.position.set(0, 4, 0);
   updateDoors(dt); updateLabels(); updateWhere();
   if (state.mode === 'walk') drawMinimap();
@@ -536,9 +553,10 @@ function frame(now) {
 // ── Boot ──────────────────────────────────────────────────────────────────
 requestAnimationFrame(() => setTimeout(() => {
   buildHouse(); makeLabels(); setTime('morning'); resize();
+  setFurniture(tryStore('shelar-furniture') !== '0'); setLabels(tryStore('shelar-labels') !== '0');
   setOverview('all', false); updateUI();
   renderer.setAnimationLoop(frame);
   $('#loader').classList.add('done'); setTimeout(() => $('#loader').remove(), 700);
   if (!tryStore('shelar-help')) setTimeout(() => $('#help').showModal(), 900);
-  window.__home = { state, player, floors, grids, walkTo, enterWalk, setOverview, startTour, goToRoom, camera, renderer, scene, teleport, STAIRS };
+  window.__home = { get grids() { return grids; }, setFurniture, setLabels, state, player, floors, walkTo, enterWalk, setOverview, startTour, goToRoom, camera, renderer, scene, teleport, STAIRS };
 }, 30));
