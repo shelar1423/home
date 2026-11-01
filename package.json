@@ -1,0 +1,13 @@
+{
+  "name": "shelar-residence",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bundle": "node scripts/build.mjs",
+    "test": "node tests/smoke.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0",
+    "three": "0.170.0"
+  }
+}

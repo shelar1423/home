@@ -1,31 +1,45 @@
-# Shelar Residence — revised-plan 3D walkthrough
+# Shelar Residence — 3D walkthrough
 
-This viewer uses the four-sheet `2D_R0_JSW_Shelar Residence_06102026.pdf` supplied by the owner. Open the self-contained `index.html` in a browser or serve this directory. All scripts, source drawing images and the character are embedded.
+An interactive 3D model of the house, built from the architect's drawing **`2D_R0_JSW_Shelar Residence_31102026.pdf`** (31 Oct 2026, six sheets: site and height details, ground floor, 1st floor, 2nd floor, 3rd floor/penthouse, upper terrace).
 
-Choose a level or the entire house. Drag to orbit in 3D view; scroll or use +/− to zoom. Walk POV and Follow cam use WASD or arrow keys to move, drag to look, Shift to run, and E or the on-screen button to open and close nearby doors. Follow cam displays a character asset from [Kenney Blocky Characters](https://kenney.nl/assets/blocky-characters), licensed CC0; see `assets/character/LICENSE.txt`. Use the floor selector to move directly between levels, or take the staircase in walkthrough mode. Tap movement buttons on touch screens.
+Live: https://shelar-residence-3d.vercel.app · or open `index.html` directly. It is one self-contained file and works offline.
 
-The revised plan shows one car and bikes at stilt level, plus a bedroom, living area, kitchen and utility; living/dining, bedroom, kitchen and utility on the first floor; two bedroom suites, living, pooja and balconies on the second floor; and a bedroom and open terrace at penthouse level. Room labels display dimensions transcribed from the drawing.
+## Using it
 
-The drawing is marked NTS. Geometry, openings, roof, furnishing and materials are indicative, not measured CAD or construction documentation. Printed levels are +2′6″, +13′6″ and +24′6″; the penthouse level is inferred at +35′6″ from the 11′ interval.
+- **Tour**: one tap walks through all four floors with a short description of each space.
+- **Overview**: shows the whole house, or one floor cut open like a dollhouse with room names and sizes. Drag to turn, pinch or scroll to zoom, and tap a room to walk into it.
+- **Walk inside**: tap the floor where you want to go, or use the round joystick (up walks, sideways turns). Drag to look around. Doors open as you approach. Walk onto a staircase, or press the orange button that appears beside it, to change floors. Tap the mini-map to walk to that spot.
+- **Room chips** jump to any room on the current floor. **Plan** shows the original drawing sheets. **☀** switches between morning, noon and evening light.
+- Keyboard: W/S or ↑/↓ to walk, A/D or ←/→ to turn, Q/E to step sideways, Shift to go faster.
 
-`model.js` is the readable scene source; `index.html` contains its embedded published copy, the four source-sheet images, Three.js and GLTFLoader. Three.js is MIT licensed; see `THREE-LICENSE.txt`. Character attribution is in `assets/character/LICENSE.txt`.
+## What the model shows
 
-## Revision audit and controls
-The published viewer contains only the four sheets dated 06 October 2026. The stilt car bay opens toward the road; the car points along its access axis. The lobby stair connects stilt to first floor, and the internal stair connects the upper floors. The first-floor main entry connects its lobby to living rather than opening onto an upper-storey exterior wall. Suite toilets, wardrobes, bedroom doors, balconies and terrace partitions are modeled separately.
+| Level | Height | Spaces |
+|---|---|---|
+| Ground | +2′6″ (parking +2′0″) | Bedroom with dressing and toilet, hall with open kitchen, utility (projects 1′2″ on the left side as drawn), parking for a car and two bikes, entrance lobby with stairs |
+| 1st | +13′6″ | Living, dining under the stair void, kitchen, utility, guest bedroom, toilet and common toilet, lobby with main door |
+| 2nd | +24′6″ | Master bedroom and second bedroom, each with walk-in wardrobe, toilet and balcony; living with study desks; pooja |
+| Penthouse | +35′6″ | Bedroom suite with balcony, stair lobby, open terrace with skylight over the pooja and a safety ladder to the roof |
+| Roof | +46′6″, parapet +47′6″ | Overhead tank above the penthouse rooms |
 
-Both walkthrough modes keep walls full height. Cutaway applies to overview modes only. The follow camera retracts around walls, door leaves and furniture and hides the avatar at very short camera distances. Furniture and animated door leaves have movement collision. Procedural plaster, stone, tile and wood textures are bundled and require no external network requests.
+The lobby staircase connects the ground and first floors. The internal U-shaped staircase connects the first floor, second floor and penthouse around an open void.
 
-This is still an interpreted floor-plan visualization: heights, materials and road approach are illustrative; no elevations or sections were supplied.
+The drawing is marked NTS (not to scale), so positions are scaled from the sheets against the printed dimensions (36′ × 23′4″ building, 1′8″/1′2″ setbacks) and are accurate to a few centimetres, not to construction tolerance. Elevations were not supplied: facade colours, window heights, finishes and furniture are illustrative. The 1st-floor sheet repeats the lobby flight numbering 23–44, but the 2nd floor has rooms above it, so that staircase ends at the first floor.
 
-## Stair continuity and camera regression
-The rendered stair flights and walking heights share the same surface definitions, including entry aprons, turns and exits. Upper-floor slab openings follow the stair footprint. Unsupported edges block movement. Stair signs identify up/down routes. The follow camera checks nearby storeys, slabs, steps and furniture; it retracts immediately, recovers smoothly and fades the character in confined spaces. The character faces its movement direction.
+## Editing
 
-`tests/walkthrough.cjs` checks 14 continuous routes in POV and follow modes, through every stair connection and the lobby door, starting at the normal spawn without teleporting between floors. With Playwright installed, run `node tests/walkthrough.cjs`. Set `CHROME_PATH` to an existing Chrome executable if needed; set `TEST_URL` to test a hosted build.
+The source is in `src/`:
 
-## Wall, opening and composition audit
-Window positions are now defined per drawing sheet, with bathroom vents, frames and sills. Balcony and terrace openings use operable glazed sliding panels. The stilt toilet connects from its bedroom; upper dressing connections stay open. The stilt stair/parking partition, first-floor bedroom doorway and kitchen partition have been corrected. Overlapping floor finishes and duplicate balcony parapets were removed; upper stair centres are voids with edge guards. Penthouse roof coverage includes the enclosed lobby and suite. Overview stairs retain their actual height, with door leaves hidden in cutaway mode. Materials use consistent texture scale, and the character retains its asset proportions with a lower camera aim.
+- `plan.js`: every room, wall, door, window, piece of furniture, staircase and tour stop, in metres measured off the sheets. Most changes happen here.
+- `builder.js`: turns the plan into geometry (walls with openings, animated doors, stairs, furniture, site).
+- `materials.js`: procedurally painted textures, so no image downloads are needed.
+- `nav.js`: walkable grid, path finding and stair rides. `main.js` handles the viewer, controls, tour and UI. `template.html` is the page shell and styles.
 
-Validation includes the 14 stair routes, wall/spawn/door checks and a sliding-door collision and balcony-entry check. Floor-plan geometry remains an interpretation of the NTS drawing; window heights and finishes are illustrative.
+```bash
+npm install
+npm run bundle        # writes index.html
+```
 
-## Switchable first-floor alternative
-Use **First-floor layout → Bedroom → bathroom** for the owner's alternative. It adds direct bedroom access to the bathroom, closes the dressing-to-bathroom opening and retains a solid bathroom/utility partition. **Current plan** restores the drawing-based arrangement. The selection is saved in the URL (`?layout=ensuite`) and affects only the first floor.
+`npm test` runs `tests/smoke.mjs`, which walks from the road to every floor and back through both staircases. It needs Playwright and a local server (`python3 -m http.server 8765`); set `CHROME_PATH` to use an installed Chrome.
+
+Three.js is MIT licensed; see `THREE-LICENSE.txt`. The drawing sheets in `plans/` belong to the architect.
